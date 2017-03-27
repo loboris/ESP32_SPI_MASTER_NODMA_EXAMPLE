@@ -18,7 +18,7 @@ Based on esp-idf **spi_master** driver, modified by **LoBo** [https://github.com
 *  **spi_bus_add_device** function has added parameter *bus_config* and automatically initializes spi bus device if not already initialized
 *  **spi_bus_remove_device** automatically removes spi bus device if no other devices are attached to it.
 *  Devices can have individual bus_configs, so different *mosi*, *miso*, *sck* pins can be configured for each device. Reconfiguring the bus is done automaticaly in **spi_device_select** function
-*  **spi_device_select* & **spi_device_deselect** functions handles devices configuration changes and software **CS**
+*  **spi_device_select** & **spi_device_deselect** functions handles devices configuration changes and software **CS**
 *  Some helper functions are added (**get_speed**, **set_speed**, ...)
 *  All structures are available in header file for easy creation of user low level spi functions. See **tftfunc.c** source for examples.
 
@@ -33,6 +33,7 @@ Main function in this mode is **spi_transfer_data()**
 *  **address**, **command** and **dummy bits** are transmitted before data phase **if** set in device's configuration and **if** 'trans->length' and 'trans->rx_length' are **not** both 0
 *  If device was not previously selected, it will be selected before transmission and deselected after transmission.
 
+---
 
 **Complete function decsriptions are available in the header file** *spi_master_nodma.h*
 
