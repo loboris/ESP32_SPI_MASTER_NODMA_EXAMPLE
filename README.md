@@ -14,23 +14,25 @@ Based on esp-idf **spi_master** driver, modified by **LoBo** [https://github.com
 *  Transfers uses the semaphore (taken in select function & given in deselect function) to protect the transfer
 *  Number of the devices attached to the bus which uses hardware CS can be 3 (**NO_CS**)
 *  Additional devices which uses software CS can be attached to the bus, up to **NO_DEV**
-*  **spi_bus_initialize** & **spi_bus_remove** functions removed, spi bus is initialized/removed in *spi_bus_add_device*/*spi_bus_remove_device* when needed
+*  **spi_bus_initialize** & **spi_bus_remove** functions are removed, spi bus is initialized/removed in *spi_bus_add_device*/*spi_bus_remove_device* when needed
 *  **spi_bus_add_device** function has added parameter *bus_config* and automatically initializes spi bus device if not already initialized
 *  **spi_bus_remove_device** automatically removes spi bus device if no other devices are attached to it.
 *  Devices can have individual bus_configs, so different *mosi*, *miso*, *sck* pins can be configured for each device. Reconfiguring the bus is done automaticaly in **spi_device_select** function
 *  **spi_device_select** & **spi_device_deselect** functions handles devices configuration changes and software **CS**
 *  Some helper functions are added (**get_speed**, **set_speed**, ...)
 *  All structures are available in header file for easy creation of user low level spi functions. See **tftfunc.c** source for examples.
+*  Transimt and receive lenghts are limited only by available memory
 
 Main function in this mode is **spi_transfer_data()**
 
-*  **TRANSMIT** 8-bit data to spi device from *trans->tx_buffer* or *trans->tx_data* (trans->lenght/8 bytes) and **RECEIVE** data to 'trans->rx_buffer' or 'trans->rx_data' (trans->rx_length/8 bytes)
+*  **TRANSMIT** 8-bit data to spi device from *trans->tx_buffer* or *trans->tx_data* (trans->lenght/8 bytes) and **RECEIVE** data to *trans->rx_buffer* or *trans->rx_data* (trans->rx_length/8 bytes)
 *  Lengths must be **8-bit** multiples! (for now)
 *  If trans->rx_buffer is NULL or trans->rx_length is 0, only transmits data
 *  If trans->tx_buffer is NULL or trans->length is 0, only receives data
 *  If the device is in duplex mode (*SPI_DEVICE_HALFDUPLEX* flag **not** set), data are transmitted and received simultaneously.
 *  If the device is in half duplex mode (*SPI_DEVICE_HALFDUPLEX* flag **is** set), data are received after transmission
 *  **address**, **command** and **dummy bits** are transmitted before data phase **if** set in device's configuration and **if** 'trans->length' and 'trans->rx_length' are **not** both 0
+*  If configured, devices **pre_cb** callback is called before and **post_cb** after the transmission
 *  If device was not previously selected, it will be selected before transmission and deselected after transmission.
 
 ---
