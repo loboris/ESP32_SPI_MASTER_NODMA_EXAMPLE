@@ -37,7 +37,7 @@ Based on esp-idf 'spi_master', modified by LoBo (https://github.com/loboris) 03/
 * Transimt and receive lenghts are limited only by available memory
 
 
-Main function in this mode is 'spi_transfer_data()'
+Main driver's function is 'spi_transfer_data()'
 
  * TRANSMIT 8-bit data to spi device from 'trans->tx_buffer' or 'trans->tx_data' (trans->lenght/8 bytes)
  * and RECEIVE data to 'trans->rx_buffer' or 'trans->rx_data' (trans->rx_length/8 bytes)

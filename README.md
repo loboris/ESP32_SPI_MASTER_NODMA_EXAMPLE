@@ -23,7 +23,7 @@ Based on esp-idf **spi_master** driver, modified by **LoBo** [https://github.com
 *  All structures are available in header file for easy creation of user low level spi functions. See **tftfunc.c** source for examples.
 *  Transimt and receive lenghts are limited only by available memory
 
-Main function in this mode is **spi_transfer_data()**
+Main driver's function is **spi_transfer_data()**
 
 *  **TRANSMIT** 8-bit data to spi device from *trans->tx_buffer* or *trans->tx_data* (trans->lenght/8 bytes) and **RECEIVE** data to *trans->rx_buffer* or *trans->rx_data* (trans->rx_length/8 bytes)
 *  Lengths must be **8-bit** multiples! (for now)
