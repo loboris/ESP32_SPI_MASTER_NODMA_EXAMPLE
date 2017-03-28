@@ -69,11 +69,8 @@ Sending individual pixels is more than 10 times faster with this driver than whe
  
 Reading the display content is demonstrated by comparing random sent and read color line.
  
-If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep touching the display until the info is printed.
+If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep the display touched until the info is printed.
  
-Some info about the ILI9341:
-It has an C/D line, which is connected to a GPIO here. It expects this line to be low for a command and high for data. We use a pre-transmit callback here to control that line: every transaction has as the user-definable argument the needed state of the D/C line and just before the transaction is sent, the callback will set this line to the correct state.
-
 ---
 
 **Example output:**
