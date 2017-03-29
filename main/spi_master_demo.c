@@ -15,7 +15,6 @@
 #include "esp_system.h"
 #include "soc/gpio_struct.h"
 #include "driver/gpio.h"
-#include "spi_master_nodma.h"
 #include "tftfunc.h"
 
 
@@ -43,8 +42,8 @@
 // This function is called just before a transmission starts.
 // It will set the D/C line to the value indicated in the user field.
 /*
-//-----------------------------------------------------------------------
-static void IRAM_ATTR ili_spi_pre_transfer_callback(spi_transaction_t *t) 
+//-----------------------------------------------------------------------------
+static void IRAM_ATTR ili_spi_pre_transfer_callback(spi_nodma_transaction_t *t) 
 {
     int dc=(int)t->user;
     gpio_set_level(PIN_NUM_DC, dc);
@@ -52,7 +51,7 @@ static void IRAM_ATTR ili_spi_pre_transfer_callback(spi_transaction_t *t)
 */
 
 // Init for ILI7341
-// ----------------
+// ------------------------------------
 static const uint8_t ILI9341_init[] = {
   23,                   					        // 23 commands in list
   ILI9341_SWRESET, DELAY,   						//  1: Software reset, no args, w/delay
@@ -64,37 +63,22 @@ static const uint8_t ILI9341_init[] = {
   ILI9341_DTCB, 2, 0x00, 0x00,
   ILI9341_POWER_SEQ, 4, 0x64, 0x03, 0X12, 0X81,
   ILI9341_PRC, 1, 0x20,
-  ILI9341_PWCTR1, 1,  								//Power control
-  0x23,               								//VRH[5:0]
-  ILI9341_PWCTR2, 1,   								//Power control
-  0x10,                 							//SAP[2:0];BT[3:0]
-  ILI9341_VMCTR1, 2,    							//VCM control
-  0x3e,                 							//Contrast
-  0x28,
-  ILI9341_VMCTR2, 1,  								//VCM control2
-  0x86,
+  ILI9341_PWCTR1, 1, 0x23,							//Power control VRH[5:0]
+  ILI9341_PWCTR2, 1, 0x10,							//Power control SAP[2:0];BT[3:0]
+  ILI9341_VMCTR1, 2, 0x3e, 0x28,					//VCM control
+  ILI9341_VMCTR2, 1, 0x86,							//VCM control2
   TFT_MADCTL, 1,									// Memory Access Control (orientation)
   (MADCTL_MV | MADCTL_BGR),
-  ILI9341_PIXFMT, 1,
-  0x55,
-  ILI9341_FRMCTR1, 2,
-  0x00,
-  0x18,
-  ILI9341_DFUNCTR, 3,   							// Display Function Control
-  0x08,
-  0x82,
-  0x27,
+  ILI9341_PIXFMT, 1, 0x55,
+  ILI9341_FRMCTR1, 2, 0x00, 0x18,
+  ILI9341_DFUNCTR, 3, 0x08, 0x82, 0x27,				// Display Function Control
   TFT_PTLAR, 4, 0x00, 0x00, 0x01, 0x3F,
-  ILI9341_3GAMMA_EN, 1,								// 3Gamma Function Disable
-  0x00, // 0x02
-  ILI9341_GAMMASET, 1, 								//Gamma curve selected
-  0x01,
+  ILI9341_3GAMMA_EN, 1, 0x00,						// 3Gamma Function Disable (0x02)
+  ILI9341_GAMMASET, 1, 0x01,						//Gamma curve selected
   ILI9341_GMCTRP1, 15,   							//Positive Gamma Correction
-  0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1,
-  0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00,
+  0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00,
   ILI9341_GMCTRN1, 15,   							//Negative Gamma Correction
-  0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
-  0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F,
+  0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F,
   ILI9341_SLPOUT, DELAY, 							//  Sleep out
   120,			 									//  120 ms delay
   TFT_DISPON, 0,
@@ -103,8 +87,8 @@ static const uint8_t ILI9341_init[] = {
 //----------------------------------------------------
 // Companion code to the above table. Reads and issues
 // a series of LCD commands stored in byte array
-//---------------------------------------------------------------------
-static void commandList(spi_device_handle_t spi, const uint8_t *addr) {
+//---------------------------------------------------------------------------
+static void commandList(spi_nodma_device_handle_t spi, const uint8_t *addr) {
   uint8_t  numCommands, numArgs, cmd;
   uint16_t ms;
 
@@ -128,8 +112,8 @@ static void commandList(spi_device_handle_t spi, const uint8_t *addr) {
 }
 
 //Initialize the display
-//--------------------------------------------
-static void ili_init(spi_device_handle_t spi) 
+//-------------------------------------------------
+static void ili_init(spi_nodma_device_handle_t spi) 
 {
     esp_err_t ret;
     //Initialize non-SPI GPIOs
@@ -146,12 +130,12 @@ static void ili_init(spi_device_handle_t spi)
 	*/
 
 	//Send all the commands
-	ret = spi_device_select(spi, 0);
+	ret = spi_nodma_device_select(spi, 0);
 	assert(ret==ESP_OK);
 
     commandList(spi, ILI9341_init);
 
-	ret = spi_device_deselect(spi);
+	ret = spi_nodma_device_deselect(spi);
 	assert(ret==ESP_OK);
 
     ///Enable backlight
@@ -160,11 +144,11 @@ static void ili_init(spi_device_handle_t spi)
 
 #ifdef USE_TOUCH
 //Send a command to the Touch screen
-//---------------------------------------------------------
-uint16_t ts_cmd(spi_device_handle_t spi, const uint8_t cmd) 
+//---------------------------------------------------------------
+uint16_t ts_cmd(spi_nodma_device_handle_t spi, const uint8_t cmd) 
 {
     esp_err_t ret;
-	spi_transaction_t t;
+	spi_nodma_transaction_t t;
 	uint8_t rxdata[2] = {0};
 
 	// send command byte & receive 2 byte response
@@ -173,7 +157,7 @@ uint16_t ts_cmd(spi_device_handle_t spi, const uint8_t cmd)
     t.rx_buffer=&rxdata;
 	t.command = cmd;
 
-	ret = spi_transfer_data(spi, &t);    // Transmit using direct mode
+	ret = spi_nodma_transfer_data(spi, &t);    // Transmit using direct mode
     assert(ret==ESP_OK);                 //Should have had no issues.
 	//printf("TS: %02x,%02x\r\n",rxdata[0],rxdata[1]);
 
@@ -262,8 +246,8 @@ static uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
 }
 
 //Simple routine to test display functions in DMA/transactions & direct mode
-//--------------------------------------------------------------------------
-static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi) 
+//--------------------------------------------------------------------------------------
+static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
     uint32_t speeds[6] = {5000000,8000000,16000000,20000000,30000000,40000000};
     int speed_idx = 0;
@@ -281,7 +265,7 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 	while(1) {
 		// *** Clear screen
 		color = 0x0000;
-		ret = spi_device_select(spi, 0);
+		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
 		disp_spi_transfer_addrwin(spi, 0, 319, 0, 239);
 		disp_spi_transfer_cmd(spi, TFT_RAMWR);
@@ -302,13 +286,13 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  240, 1);
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
-		ret = spi_device_deselect(spi);
+		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 
 		// *** Send color lines
 		ry = rand() % 239;
 		tstart = clock();
-		ret = spi_device_select(spi, 0);
+		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
 		line_check=-9999;
 		for (y=0; y<240; y++) {
@@ -326,7 +310,7 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 		ret = disp_spi_read_data(spi, 0, ry, 319, ry, 320, (uint8_t *)(line[0]));
 		if (ret == ESP_OK) line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), 320*2);
 
-		ret =spi_device_deselect(spi);
+		ret =spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
@@ -334,7 +318,7 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 		uint8_t clidx = 0;
 		color = 0xF800;
 		tstart = clock();
-		ret = spi_device_select(spi, 0);
+		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
 		for (y=0; y<240; y++) {
 			for (x=0; x<320; x++) {
@@ -352,7 +336,7 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 				else color = 0x07FF;
 			}
 		}
-		ret = spi_device_deselect(spi);
+		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 		t2 = clock() - tstart;
 		vTaskDelay(1000 / portTICK_RATE_MS);
@@ -360,19 +344,19 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 		// *** Clear screen using direct mode
 		color = 0xFFE0;
 		tstart = clock();
-		ret = spi_device_select(spi, 0);
+		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
 		disp_spi_transfer_addrwin(spi, 0, 319, 0, 239);
 		disp_spi_transfer_cmd(spi, TFT_RAMWR);
 		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  320*240, 1);
-		ret = spi_device_deselect(spi);
+		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 		t3 = clock() - tstart;
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
 #ifdef USE_TOUCH
 		// Get toush status
-		//ret = spi_device_deselect(tsspi);
+		//ret = spi_nodma_device_deselect(tsspi);
 		//assert(ret==ESP_OK);
 		tz = ts_cmd(tsspi, 0xB0);
 		if (tz > 100) {
@@ -380,13 +364,13 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 			tx = ts_cmd(tsspi, 0xD0);
 			ty = ts_cmd(tsspi, 0x90);
 		}
-		//ret = spi_device_deselect(tsspi);
+		//ret = spi_nodma_device_deselect(tsspi);
 		//assert(ret==ESP_OK);
 #endif
 
 		// *** Print info
 		printf("-------------\r\n");
-		printf(" Disp clock = %5.2f MHz (%5.2f)\r\n", (float)((float)(get_speed(spi))/1000000.0), (float)(speeds[speed_idx])/1000000.0);
+		printf(" Disp clock = %5.2f MHz (%5.2f)\r\n", (float)((float)(spi_nodma_get_speed(spi))/1000000.0), (float)(speeds[speed_idx])/1000000.0);
 		printf("      Lines = %5d  ms (240 lines of 320 pixels)\r\n",t1);
 		printf(" Read check   ");
 		if (line_check == 0) printf("   OK, line %d\r\n", ry);
@@ -403,7 +387,7 @@ static void display_test(spi_device_handle_t spi, spi_device_handle_t tsspi)
 		// Change SPI speed
 		speed_idx++;
 		if (speed_idx > 5) speed_idx = 0;
-		set_speed(spi, speeds[speed_idx]);
+		spi_nodma_set_speed(spi, speeds[speed_idx]);
     }
 }
 
@@ -412,17 +396,17 @@ void app_main()
 {
     esp_err_t ret;
 	
-    spi_device_handle_t spi;
-    spi_device_handle_t tsspi = NULL;
+    spi_nodma_device_handle_t spi;
+    spi_nodma_device_handle_t tsspi = NULL;
 	
-    spi_bus_config_t buscfg={
+    spi_nodma_bus_config_t buscfg={
         .miso_io_num=PIN_NUM_MISO,
         .mosi_io_num=PIN_NUM_MOSI,
         .sclk_io_num=PIN_NUM_CLK,
         .quadwp_io_num=-1,
         .quadhd_io_num=-1
     };
-    spi_device_interface_config_t devcfg={
+    spi_nodma_device_interface_config_t devcfg={
         .clock_speed_hz=5000000,                //Initial clock out at 5 MHz
         .mode=0,                                //SPI mode 0
         .spics_io_num=-1,                       //we will use external CS pin
@@ -433,7 +417,7 @@ void app_main()
     };
 
 #ifdef USE_TOUCH
-	spi_device_interface_config_t tsdevcfg={
+	spi_nodma_device_interface_config_t tsdevcfg={
         .clock_speed_hz=2500000,                //Clock out at 2.5 MHz
         .mode=0,                                //SPI mode 2
         .spics_io_num=PIN_NUM_TCS,              //Touch CS pin
@@ -448,31 +432,31 @@ void app_main()
 	printf("===================================\r\n\r\n");
 
 	//Initialize the SPI bus and attach the LCD to the SPI bus
-    ret=spi_bus_add_device(SPI_BUS, &buscfg, &devcfg, &spi);
+    ret=spi_nodma_bus_add_device(SPI_BUS, &buscfg, &devcfg, &spi);
     assert(ret==ESP_OK);
 	printf("SPI: bus initialized\r\n");
 
 	// Test select/deselect
-	ret = spi_device_select(spi, 1);
+	ret = spi_nodma_device_select(spi, 1);
     assert(ret==ESP_OK);
-	ret = spi_device_deselect(spi);
+	ret = spi_nodma_device_deselect(spi);
     assert(ret==ESP_OK);
 
-	printf("SPI: attached display device, speed=%u\r\n", get_speed(spi));
-	printf("SPI: bus uses native pins: %s\r\n", spi_uses_native_pins(spi) ? "true" : "false");
+	printf("SPI: attached display device, speed=%u\r\n", spi_nodma_get_speed(spi));
+	printf("SPI: bus uses native pins: %s\r\n", spi_nodma_uses_native_pins(spi) ? "true" : "false");
 
 #ifdef USE_TOUCH
     //Attach the touch screen to the same SPI bus
-    ret=spi_bus_add_device(SPI_BUS, &buscfg, &tsdevcfg, &tsspi);
+    ret=spi_nodma_bus_add_device(SPI_BUS, &buscfg, &tsdevcfg, &tsspi);
     assert(ret==ESP_OK);
 
 	// Test select/deselect
-	ret = spi_device_select(tsspi, 1);
+	ret = spi_nodma_device_select(tsspi, 1);
     assert(ret==ESP_OK);
-	ret = spi_device_deselect(tsspi);
+	ret = spi_nodma_device_deselect(tsspi);
     assert(ret==ESP_OK);
 
-	printf("SPI: attached TS device, speed=%u\r\n", get_speed(tsspi));
+	printf("SPI: attached TS device, speed=%u\r\n", spi_nodma_get_speed(tsspi));
 #endif
 
 	//Initialize the LCD

@@ -35,7 +35,7 @@ typedef enum {
     SPI_HOST=0,                     ///< SPI1, SPI; Cannot be used in this driver!
     HSPI_HOST=1,                    ///< SPI2, HSPI
     VSPI_HOST=2                     ///< SPI3, VSPI
-} spi_host_device_t;
+} spi_nodma_host_device_t;
 
 
 /**
@@ -51,7 +51,7 @@ typedef struct {
     int sclk_io_num;                ///< GPIO pin for Spi CLocK signal, or -1 if not used.
     int quadwp_io_num;              ///< GPIO pin for WP (Write Protect) signal which is used as D2 in 4-bit communication modes, or -1 if not used.
     int quadhd_io_num;              ///< GPIO pin for HD (HolD) signal which is used as D3 in 4-bit communication modes, or -1 if not used.
-} spi_bus_config_t;
+} spi_nodma_bus_config_t;
 
 
 #define SPI_DEVICE_TXBIT_LSBFIRST          (1<<0)  ///< Transmit command/address/data LSB first instead of the default MSB first
@@ -64,8 +64,8 @@ typedef struct {
 
 #define SPI_ERR_OTHER_CONFIG 7001
 
-typedef struct spi_transaction_t spi_transaction_t;
-typedef void(*transaction_cb_t)(spi_transaction_t *trans);
+typedef struct spi_nodma_transaction_t spi_nodma_transaction_t;
+typedef void(*transaction_cb_t)(spi_nodma_transaction_t *trans);
 
 /**
  * @brief This is a configuration for a SPI slave device that is connected to one of the SPI buses.
@@ -80,24 +80,24 @@ typedef struct {
     uint8_t cs_ena_posttrans;       ///< Amount of SPI bit-cycles the cs should stay active after the transmission (0-16)
     int clock_speed_hz;             ///< Clock speed, in Hz
     int spics_io_num;               ///< CS GPIO pin for this device, handled by hardware; set to -1 if not used
-    int spics_ext_io_num;           ///< CS GPIO pin for this device, handled by software (spi_device_select/spi_device_deselect); only used if spics_io_num=-1
+    int spics_ext_io_num;           ///< CS GPIO pin for this device, handled by software (spi_nodma_device_select/spi_nodma_device_deselect); only used if spics_io_num=-1
     uint32_t flags;                 ///< Bitwise OR of SPI_DEVICE_* flags
-    transaction_cb_t pre_cb;        ///< Callback to be called before a transmission is started. This callback from 'spi_transfer_data' function.
-    transaction_cb_t post_cb;       ///< Callback to be called after a transmission has completed. This callback from 'spi_transfer_data' function.
+    transaction_cb_t pre_cb;        ///< Callback to be called before a transmission is started. This callback from 'spi_nodma_transfer_data' function.
+    transaction_cb_t post_cb;       ///< Callback to be called after a transmission has completed. This callback from 'spi_nodma_transfer_data' function.
     uint8_t selected;               ///< **INTERNAL** 1 if the device's CS pin is active
-} spi_device_interface_config_t;
+} spi_nodma_device_interface_config_t;
 
 
 #define SPI_TRANS_MODE_DIO            (1<<0)  ///< Transmit/receive data in 2-bit mode
 #define SPI_TRANS_MODE_QIO            (1<<1)  ///< Transmit/receive data in 4-bit mode
 #define SPI_TRANS_MODE_DIOQIO_ADDR    (1<<2)  ///< Also transmit address in mode selected by SPI_MODE_DIO/SPI_MODE_QIO
-#define SPI_TRANS_USE_RXDATA          (1<<3)  ///< Receive into rx_data member of spi_transaction_t instead into memory at rx_buffer.
-#define SPI_TRANS_USE_TXDATA          (1<<4)  ///< Transmit tx_data member of spi_transaction_t instead of data at tx_buffer. Do not set tx_buffer when using this.
+#define SPI_TRANS_USE_RXDATA          (1<<3)  ///< Receive into rx_data member of spi_nodma_transaction_t instead into memory at rx_buffer.
+#define SPI_TRANS_USE_TXDATA          (1<<4)  ///< Transmit tx_data member of spi_nodma_transaction_t instead of data at tx_buffer. Do not set tx_buffer when using this.
 
 /**
  * This structure describes one SPI transmission
  */
-struct spi_transaction_t {
+struct spi_nodma_transaction_t {
     uint32_t flags;                 ///< Bitwise OR of SPI_TRANS_* flags
     uint16_t command;               ///< Command data. Specific length was given when device was added to the bus.
     uint64_t address;               ///< Address. Specific length was given when device was added to the bus.
@@ -118,27 +118,27 @@ struct spi_transaction_t {
 #define NO_DEV 6				    // Number of spi devices per SPI host; more than 3 devices can be attached to the same bus if using software CS's
 #define SPI_SEMAPHORE_WAIT 2000     // Time in ms to wait for SPI mutex
 
-typedef struct spi_device_t spi_device_t;
+typedef struct spi_nodma_device_t spi_nodma_device_t;
 
 typedef struct {
-    spi_device_t *device[NO_DEV];
+    spi_nodma_device_t *device[NO_DEV];
     spi_dev_t *hw;
     int cur_device;
     bool no_gpio_matrix;
-    QueueHandle_t spi_bus_mutex;
-    spi_bus_config_t cur_bus_config;
-} spi_host_t;
+    QueueHandle_t spi_nodma_bus_mutex;
+    spi_nodma_bus_config_t cur_bus_config;
+} spi_nodma_host_t;
 
-struct spi_device_t {
-    spi_device_interface_config_t cfg;
-    spi_host_t *host;
-    spi_bus_config_t bus_config;
-	spi_host_device_t host_dev;
+struct spi_nodma_device_t {
+    spi_nodma_device_interface_config_t cfg;
+    spi_nodma_host_t *host;
+    spi_nodma_bus_config_t bus_config;
+	spi_nodma_host_device_t host_dev;
 };
 
-typedef struct spi_device_t* spi_device_handle_t;  ///< Handle for a device on a SPI bus
-typedef struct spi_host_t* spi_host_handle_t;
-typedef struct spi_device_interface_config_t* spi_device_interface_config_handle_t;
+typedef struct spi_nodma_device_t* spi_nodma_device_handle_t;  ///< Handle for a device on a SPI bus
+typedef struct spi_nodma_host_t* spi_nodma_host_handle_t;
+typedef struct spi_nodma_device_interface_config_t* spi_nodma_device_interface_config_handle_t;
 
 
 /**
@@ -153,7 +153,7 @@ typedef struct spi_device_interface_config_t* spi_device_interface_config_handle
  *
  * @param host SPI peripheral to allocate device on (HSPI or VSPI)
  * @param dev_config SPI interface protocol config for the device
- * @param bus_config Pointer to a spi_bus_config_t struct specifying how the host device bus should be initialized
+ * @param bus_config Pointer to a spi_nodma_bus_config_t struct specifying how the host device bus should be initialized
  * @param handle Pointer to variable to hold the device handle
  * @return
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
@@ -161,7 +161,7 @@ typedef struct spi_device_interface_config_t* spi_device_interface_config_handle
  *         - ESP_ERR_NO_MEM        if out of memory
  *         - ESP_OK                on success
  */
-esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_config, spi_device_interface_config_t *dev_config, spi_device_handle_t *handle);
+esp_err_t spi_nodma_bus_add_device(spi_nodma_host_device_t host, spi_nodma_bus_config_t *bus_config, spi_nodma_device_interface_config_t *dev_config, spi_nodma_device_handle_t *handle);
 
 /**
  * @brief Remove a device from the SPI bus. If after removal no other device is attached to the spi bus device, it is freed.
@@ -172,7 +172,7 @@ esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_confi
  *         - ESP_ERR_INVALID_STATE if device already is freed
  *         - ESP_OK                on success
  */
-esp_err_t spi_bus_remove_device(spi_device_handle_t handle);
+esp_err_t spi_nodma_bus_remove_device(spi_nodma_device_handle_t handle);
 
 
 /**
@@ -180,12 +180,12 @@ esp_err_t spi_bus_remove_device(spi_device_handle_t handle);
  *
  * Some frequencies cannot be set, for example 30000000 will actually set SPI clock to 26666666 Hz
  *
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * 
  * @return 
  *         - actuall SPI clock
  */
-uint32_t get_speed(spi_device_handle_t handle);
+uint32_t spi_nodma_get_speed(spi_nodma_device_handle_t handle);
 
 /**
  * @brief Set the new clock speed for the device, return the actuall SPI bus speed set, in Hz
@@ -193,13 +193,13 @@ uint32_t get_speed(spi_device_handle_t handle);
  *
  * Some frequencies cannot be set, for example 30000000 will actually set SPI clock to 26666666 Hz
  *
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * @param speed  New device spi clock to be set in Hz
  * 
  * @return 
  *         - actuall SPI clock
  */
-uint32_t set_speed(spi_device_handle_t handle, uint32_t speed);
+uint32_t spi_nodma_set_speed(spi_nodma_device_handle_t handle, uint32_t speed);
 
 /**
  * @brief Select spi device for transmission
@@ -209,14 +209,14 @@ uint32_t set_speed(spi_device_handle_t handle, uint32_t speed);
  * 
  * spi bus device's semaphore is taken before selecting the device
  *
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * @param force  configure spi bus even if the previous device was the same
  * 
  * @return 
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
  *         - ESP_OK                on success
  */
-esp_err_t spi_device_select(spi_device_handle_t handle, int force);
+esp_err_t spi_nodma_device_select(spi_nodma_device_handle_t handle, int force);
 
 /**
  * @brief De-select spi device
@@ -225,35 +225,35 @@ esp_err_t spi_device_select(spi_device_handle_t handle, int force);
  * 
  * spi bus device's semaphore is given after selecting the device
  * 
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * 
  * @return 
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
  *         - ESP_OK                on success
  */
-esp_err_t spi_device_deselect(spi_device_handle_t handle);
+esp_err_t spi_nodma_device_deselect(spi_nodma_device_handle_t handle);
 
 
 /**
  * @brief Check if spi bus uses native spi pins
  *
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * 
  * @return 
  *         - true        if native spi pins are used
  *         - false       if spi pins are routed through gpio matrix
  */
-bool spi_uses_native_pins(spi_device_handle_t handle);
+bool spi_nodma_uses_native_pins(spi_nodma_device_handle_t handle);
 
 /**
  * @brief Get spi bus native spi pins
  *
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * 
  * @return 
  *         places spi bus native pins in provided pointers
  */
-void spi_get_native_pins(int host, int *sdi, int *sdo, int *sck);
+void spi_nodma_get_native_pins(int host, int *sdi, int *sdo, int *sck);
 
 /**
  * @brief Transimit and receive data to/from spi device based on transaction data
@@ -269,7 +269,7 @@ void spi_get_native_pins(int host, int *sdi, int *sdo, int *sck);
  *   and IF 'trans->length' and 'trans->rx_length' are NOT both 0
  * If device was not previously selected, it will be selected before transmission and deselected after transmission.
  *
- * @param handle Device handle obtained using spi_bus_add_device
+ * @param handle Device handle obtained using spi_nodma_bus_add_device
  * 
  * @param trans Pointer to variable containing the description of the transaction that is executed
  *
@@ -279,7 +279,7 @@ void spi_get_native_pins(int host, int *sdi, int *sdo, int *sck);
  *         - ESP_OK                on success
  *
  */
-esp_err_t spi_transfer_data(spi_device_handle_t handle, spi_transaction_t *trans);
+esp_err_t spi_nodma_transfer_data(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans);
 
 
 #ifdef __cplusplus

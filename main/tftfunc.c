@@ -10,10 +10,10 @@
 
 
 // Start spi bus transfer of given number of bits
-//----------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_start(spi_device_handle_t handle, int bits) {
+//----------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_start(spi_nodma_device_handle_t handle, int bits) {
 	// Load send buffer
-	spi_host_t *host = handle->host;
+	spi_nodma_host_t *host = handle->host;
 	host->hw->user.usr_mosi_highpart = 0;
 	host->hw->mosi_dlen.usr_mosi_dbitlen = bits-1;
 	host->hw->user.usr_mosi = 1;
@@ -30,8 +30,8 @@ void IRAM_ATTR disp_spi_transfer_start(spi_device_handle_t handle, int bits) {
 }
 
 // Send 1 byte display command
-//----------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_cmd(spi_device_handle_t handle, int8_t cmd) {
+//----------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_cmd(spi_nodma_device_handle_t handle, int8_t cmd) {
 	// Wait for SPI bus ready
 	while (handle->host->hw->cmd.usr);
 
@@ -45,8 +45,8 @@ void IRAM_ATTR disp_spi_transfer_cmd(spi_device_handle_t handle, int8_t cmd) {
 	while (handle->host->hw->cmd.usr);
 }
 
-//--------------------------------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_cmd_data(spi_device_handle_t handle, int8_t cmd, uint8_t *data, uint32_t len) {
+//--------------------------------------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_cmd_data(spi_nodma_device_handle_t handle, int8_t cmd, uint8_t *data, uint32_t len) {
 	// Wait for SPI bus ready
 	while (handle->host->hw->cmd.usr);
 
@@ -100,8 +100,8 @@ void IRAM_ATTR disp_spi_transfer_cmd_data(spi_device_handle_t handle, int8_t cmd
 }
 
 // Set the address window for display write & read commands
-//------------------------------------------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_addrwin(spi_device_handle_t handle, uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2) {
+//------------------------------------------------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_addrwin(spi_nodma_device_handle_t handle, uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2) {
 	uint32_t wd;
 
 	// Wait for SPI bus ready
@@ -140,8 +140,8 @@ void IRAM_ATTR disp_spi_transfer_addrwin(spi_device_handle_t handle, uint16_t x1
 }
 
 // Set one display pixel to given color, address window already set
-//----------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_pixel(spi_device_handle_t handle, uint16_t color) {
+//----------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_t color) {
 	uint32_t wd;
 
 	// Wait for SPI bus ready
@@ -163,8 +163,8 @@ void IRAM_ATTR disp_spi_transfer_pixel(spi_device_handle_t handle, uint16_t colo
 }
 
 // Set one display pixel at given coordinates to given color
-//-----------------------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_set_pixel(spi_device_handle_t handle, uint16_t x, uint16_t y, uint16_t color) {
+//-----------------------------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, uint16_t y, uint16_t color) {
 	disp_spi_transfer_addrwin(handle, x, x+1, y, y+1);
 	disp_spi_transfer_pixel(handle, color);
 }
@@ -172,8 +172,8 @@ void IRAM_ATTR disp_spi_set_pixel(spi_device_handle_t handle, uint16_t x, uint16
 // If rep==true  repeat sending color data to display 'len' times
 // If rep==false send 'len' color data from color buffer to display
 // address window must be already set
-//---------------------------------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_color_rep(spi_device_handle_t handle, uint8_t *color, uint32_t len, uint8_t rep)
+//---------------------------------------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uint8_t *color, uint32_t len, uint8_t rep)
 {
 	uint8_t idx;
 	uint32_t count;
@@ -237,8 +237,8 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_device_handle_t handle, uint8_t *
 }
 
 // Reads pixels/colors from the TFT's GRAM
-//-------------------------------------------------------------------------------------------------------
-int IRAM_ATTR disp_spi_read_data(spi_device_handle_t handle, int x1, int y1, int x2, int y2, int len, uint8_t *buf)
+//-----------------------------------------------------------------------------------------------------------------------
+int IRAM_ATTR disp_spi_read_data(spi_nodma_device_handle_t handle, int x1, int y1, int x2, int y2, int len, uint8_t *buf)
 {
 	memset(buf, 0, len*2);
 
@@ -258,7 +258,7 @@ int IRAM_ATTR disp_spi_read_data(spi_device_handle_t handle, int x1, int y1, int
     // Set DC to 1 (data mode);
 	gpio_set_level(PIN_NUM_DC, 1);
 
-	spi_transaction_t t;
+	spi_nodma_transaction_t t;
     memset(&t, 0, sizeof(t));  //Zero out the transaction
     t.length=0;                //Send notning
     t.tx_buffer=NULL;
@@ -266,7 +266,7 @@ int IRAM_ATTR disp_spi_read_data(spi_device_handle_t handle, int x1, int y1, int
     t.rx_buffer=rbuf;
     //t.user=(void*)1;         //D/C needs to be set to 1
 
-	ret = spi_transfer_data(handle, &t); // Transmit using direct mode
+	ret = spi_nodma_transfer_data(handle, &t); // Transmit using direct mode
 
 	if (ret == ESP_OK) {
 		int idx = 0;

@@ -142,13 +142,13 @@
 #define MADCTL_MH  0x04
 
 
-void disp_spi_transfer_start(spi_device_handle_t handle, int bits);
-void disp_spi_transfer_cmd(spi_device_handle_t handle, int8_t cmd);
-void disp_spi_transfer_addrwin(spi_device_handle_t handle, uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2);
-void disp_spi_transfer_pixel(spi_device_handle_t handle, uint16_t color);
-void disp_spi_set_pixel(spi_device_handle_t handle, uint16_t x, uint16_t y, uint16_t color);
-void disp_spi_transfer_color_rep(spi_device_handle_t handle, uint8_t *color, uint32_t len, uint8_t rep);
-void disp_spi_transfer_cmd_data(spi_device_handle_t handle, int8_t cmd, uint8_t *data, uint32_t len);
-int disp_spi_read_data(spi_device_handle_t handle, int x1, int y1, int x2, int y2, int len, uint8_t *buf);
+void disp_spi_transfer_start(spi_nodma_device_handle_t handle, int bits);
+void disp_spi_transfer_cmd(spi_nodma_device_handle_t handle, int8_t cmd);
+void disp_spi_transfer_addrwin(spi_nodma_device_handle_t handle, uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2);
+void disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_t color);
+void disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, uint16_t y, uint16_t color);
+void disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uint8_t *color, uint32_t len, uint8_t rep);
+void disp_spi_transfer_cmd_data(spi_nodma_device_handle_t handle, int8_t cmd, uint8_t *data, uint32_t len);
+int disp_spi_read_data(spi_nodma_device_handle_t handle, int x1, int y1, int x2, int y2, int len, uint8_t *buf);
 
 #endif

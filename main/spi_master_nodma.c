@@ -26,18 +26,18 @@ Based on esp-idf 'spi_master', modified by LoBo (https://github.com/loboris) 03/
 * Transfers uses the semaphore (taken in select function & given in deselect function) to protect the transfer
 * Number of the devices attached to the bus which uses hardware CS can be 3 ('NO_CS')
 * Additional devices which uses software CS can be attached to the bus, up to 'NO_DEV'
-* 'spi_bus_initialize' & 'spi_bus_remove' functions are removed, spi bus is initiated/removed in spi_bus_add_device/spi_bus_remove_device when needed
-* 'spi_bus_add_device' function has added parameter 'bus_config' and automatically initializes spi bus device if not already initialized
-* 'spi_bus_remove_device' automatically removes spi bus device if no other devices are attached to it.
+* 'spi_bus_initialize' & 'spi_bus_remove' functions are removed, spi bus is initiated/removed in spi_nodma_bus_add_device/spi_nodma_bus_remove_device when needed
+* 'spi_nodma_bus_add_device' function has added parameter 'bus_config' and automatically initializes spi bus device if not already initialized
+* 'spi_nodma_bus_remove_device' automatically removes spi bus device if no other devices are attached to it.
 * Devices can have individual bus_configs, so different mosi, miso, sck pins can be configured for each device
-    Reconfiguring the bus is done automaticaly in 'spi_device_select' function
-* 'spi_device_select' & 'spi_device_deselect' functions handles devices configuration changes and software CS
-* Some helper functions are added ('get_speed', 'set_speed', ...)
+    Reconfiguring the bus is done automaticaly in 'spi_nodma_device_select' function
+* 'spi_nodma_device_select' & 'spi_nodma_device_deselect' functions handles devices configuration changes and software CS
+* Some helper functions are added ('spi_nodma_get_speed', 'spi_nodma_set_speed', ...)
 * All structures are available in header file for easy creation of user low level spi functions. See **tftfunc.c** source for examples.
 * Transimt and receive lenghts are limited only by available memory
 
 
-Main driver's function is 'spi_transfer_data()'
+Main driver's function is 'spi_nodma_transfer_data()'
 
  * TRANSMIT 8-bit data to spi device from 'trans->tx_buffer' or 'trans->tx_data' (trans->lenght/8 bytes)
  * and RECEIVE data to 'trans->rx_buffer' or 'trans->rx_data' (trans->rx_length/8 bytes)
@@ -55,7 +55,7 @@ Main driver's function is 'spi_transfer_data()'
 
 /*
  Replace this include with
- #include "drivers/spi_master_nodma.h"
+ #include "driver/spi_master_nodma.h"
  if the driver is located in esp-isf/components
 */
 #include "spi_master_nodma.h"
@@ -85,10 +85,10 @@ Main driver's function is 'spi_transfer_data()'
 #include "esp_heap_alloc_caps.h"
 
 
-static spi_host_t *spihost[3] = {NULL};
+static spi_nodma_host_t *spihost[3] = {NULL};
 
 
-static const char *SPI_TAG = "spi_master";
+static const char *SPI_TAG = "spi_nodma_master";
 #define SPI_CHECK(a, str, ret_val) \
     if (!(a)) { \
         ESP_LOGE(SPI_TAG,"%s(%d): %s", __FUNCTION__, __LINE__, str); \
@@ -118,7 +118,7 @@ typedef struct {
     const uint8_t irq;              //irq source for interrupt mux
     const uint8_t irq_dma;          //dma irq source for interrupt mux
     const periph_module_t module;   //peripheral module, for enabling clock etc
-    spi_dev_t *hw;              //Pointer to the hardware registers
+    spi_dev_t *hw;                  //Pointer to the hardware registers
 } spi_signal_conn_t;
 
 /*
@@ -198,15 +198,15 @@ static const spi_signal_conn_t io_signal[3]={
  * @warning For now, only supports HSPI and VSPI.
  *
  * @param host SPI peripheral that controls this bus
- * @param bus_config Pointer to a spi_bus_config_t struct specifying how the host should be initialized
+ * @param bus_config Pointer to a spi_nodma_bus_config_t struct specifying how the host should be initialized
  * @return
  *         - ESP_ERR_INVALID_ARG   if configuration is invalid
  *         - ESP_ERR_INVALID_STATE if host already is in use
  *         - ESP_ERR_NO_MEM        if out of memory
  *         - ESP_OK                on success
  */
-//-------------------------------------------------------------------------------------------------
-static esp_err_t spi_bus_initialize(spi_host_device_t host, spi_bus_config_t *bus_config, int init)
+//-------------------------------------------------------------------------------------------------------------------
+static esp_err_t spi_nodma_bus_initialize(spi_nodma_host_device_t host, spi_nodma_bus_config_t *bus_config, int init)
 {
     bool native=true;
 
@@ -228,16 +228,16 @@ static esp_err_t spi_bus_initialize(spi_host_device_t host, spi_bus_config_t *bu
     SPI_CHECK(bus_config->quadhd_io_num<0 || GPIO_IS_VALID_OUTPUT_GPIO(bus_config->quadhd_io_num), "spihd pin invalid", ESP_ERR_INVALID_ARG);
 
     if (init > 0) {
-		spihost[host]=malloc(sizeof(spi_host_t));
+		spihost[host]=malloc(sizeof(spi_nodma_host_t));
 		if (spihost[host]==NULL) return ESP_ERR_NO_MEM;
-		memset(spihost[host], 0, sizeof(spi_host_t));
+		memset(spihost[host], 0, sizeof(spi_nodma_host_t));
 		// Create semaphore
-		spihost[host]->spi_bus_mutex = xSemaphoreCreateMutex();
-		if (!spihost[host]->spi_bus_mutex) return ESP_ERR_NO_MEM;
+		spihost[host]->spi_nodma_bus_mutex = xSemaphoreCreateMutex();
+		if (!spihost[host]->spi_nodma_bus_mutex) return ESP_ERR_NO_MEM;
     }
 
     spihost[host]->cur_device = -1;
-    memcpy(&spihost[host]->cur_bus_config, bus_config, sizeof(spi_bus_config_t));
+    memcpy(&spihost[host]->cur_bus_config, bus_config, sizeof(spi_nodma_bus_config_t));
 
     //Check if the selected pins correspond to the native pins of the peripheral
     if (bus_config->mosi_io_num >= 0 && bus_config->mosi_io_num!=io_signal[host].spid_native) native=false;
@@ -305,8 +305,8 @@ static esp_err_t spi_bus_initialize(spi_host_device_t host, spi_bus_config_t *bu
  *         - ESP_ERR_INVALID_STATE if not all devices on the bus are freed
  *         - ESP_OK                on success
  */
-//---------------------------------------------------------------
-static esp_err_t spi_bus_free(spi_host_device_t host, int dofree)
+//---------------------------------------------------------------------------
+static esp_err_t spi_nodma_bus_free(spi_nodma_host_device_t host, int dofree)
 {
     int x;
     SPI_CHECK(host>=SPI_HOST && host<=VSPI_HOST, "invalid host", ESP_ERR_INVALID_ARG);
@@ -318,21 +318,21 @@ static esp_err_t spi_bus_free(spi_host_device_t host, int dofree)
     }
     periph_module_disable(io_signal[host].module);
     if (dofree) {
-		vSemaphoreDelete(spihost[host]->spi_bus_mutex);
+		vSemaphoreDelete(spihost[host]->spi_nodma_bus_mutex);
 		free(spihost[host]);
 		spihost[host]=NULL;
     }
     return ESP_OK;
 }
 
-//--------------------------------------------------------------------------------------------------------------------------------------------------------
-esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_config, spi_device_interface_config_t *dev_config, spi_device_handle_t *handle)
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+esp_err_t spi_nodma_bus_add_device(spi_nodma_host_device_t host, spi_nodma_bus_config_t *bus_config, spi_nodma_device_interface_config_t *dev_config, spi_nodma_device_handle_t *handle)
 {
 	SPI_CHECK(host!=SPI_HOST, "SPI1 is not supported", ESP_ERR_NOT_SUPPORTED);
 	SPI_CHECK(host>=SPI_HOST && host<=VSPI_HOST, "invalid host", ESP_ERR_NOT_SUPPORTED);
 	
 	if (spihost[host] == NULL) {
-		esp_err_t ret = spi_bus_initialize(host, bus_config, 1);
+		esp_err_t ret = spi_nodma_bus_initialize(host, bus_config, 1);
 		if (ret) return ret;
 	}
 	
@@ -352,7 +352,7 @@ esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_confi
 	else maxdev=NO_DEV;
     for (freecs=0; freecs<maxdev; freecs++) {
         //See if this slot is free; reserve if it is by putting a dummy pointer in the slot. We use an atomic compare&swap to make this thread-safe.
-        if (__sync_bool_compare_and_swap(&spihost[host]->device[freecs], NULL, (spi_device_t *)1)) break;
+        if (__sync_bool_compare_and_swap(&spihost[host]->device[freecs], NULL, (spi_nodma_device_t *)1)) break;
     }
     SPI_CHECK(freecs!=maxdev, "no free devices for host", ESP_ERR_NOT_FOUND);
     //The hardware looks like it would support this, but actually setting cs_ena_pretrans when transferring in full
@@ -360,9 +360,9 @@ esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_confi
     SPI_CHECK(dev_config->cs_ena_pretrans==0 || (dev_config->flags & SPI_DEVICE_HALFDUPLEX), "cs pretrans delay incompatible with full-duplex", ESP_ERR_INVALID_ARG);
 
     //Allocate memory for device
-    spi_device_t *dev=malloc(sizeof(spi_device_t));
+    spi_nodma_device_t *dev=malloc(sizeof(spi_nodma_device_t));
     if (dev==NULL) return ESP_ERR_NO_MEM;
-    memset(dev, 0, sizeof(spi_device_t));
+    memset(dev, 0, sizeof(spi_nodma_device_t));
     spihost[host]->device[freecs]=dev;
 
     if (dev_config->duty_cycle_pos==0) dev_config->duty_cycle_pos=128;
@@ -370,9 +370,9 @@ esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_confi
 	dev->host_dev = host;
 
     //We want to save a copy of the dev config in the dev struct.
-    memcpy(&dev->cfg, dev_config, sizeof(spi_device_interface_config_t));
+    memcpy(&dev->cfg, dev_config, sizeof(spi_nodma_device_interface_config_t));
     //We want to save a copy of the bus config in the dev struct.
-    memcpy(&dev->bus_config, bus_config, sizeof(spi_bus_config_t));
+    memcpy(&dev->bus_config, bus_config, sizeof(spi_nodma_bus_config_t));
 
     //Set CS pin, CS options
     if (dev_config->spics_io_num > 0) {
@@ -404,8 +404,8 @@ esp_err_t spi_bus_add_device(spi_host_device_t host, spi_bus_config_t *bus_confi
     return ESP_OK;
 }
 
-//---------------------------------------------------------
-esp_err_t spi_bus_remove_device(spi_device_handle_t handle)
+//---------------------------------------------------------------------
+esp_err_t spi_nodma_bus_remove_device(spi_nodma_device_handle_t handle)
 {
     int x;
     SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
@@ -421,20 +421,20 @@ esp_err_t spi_bus_remove_device(spi_device_handle_t handle)
 	}
 	if (x == NO_DEV) {
 		free(handle);
-		spi_bus_free(handle->host_dev, 1);
+		spi_nodma_bus_free(handle->host_dev, 1);
 	}
 	else free(handle);
 
 	return ESP_OK;
 }
 
-//-------------------------------------------------------
-static int spi_freq_for_pre_n(int fapb, int pre, int n) {
+//-----------------------------------------------------------------
+static int IRAM_ATTR spi_freq_for_pre_n(int fapb, int pre, int n) {
     return (fapb / (pre * n));
 }
 
-//--------------------------------------------------------------------------
-static void spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cycle) {
+//------------------------------------------------------------------------------------
+static void IRAM_ATTR spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cycle) {
     int pre, n, h, l;
 
     //In hw, n, h and l are 1-64, pre is 1-8K. Value written to register is one lower than used value.
@@ -483,15 +483,15 @@ static void spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cycle) {
     }
 }
 
-//----------------------------------------------------------------
-esp_err_t spi_device_select(spi_device_handle_t handle, int force)
+//--------------------------------------------------------------------------------------
+esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, int force)
 {
 	if ((handle->cfg.selected == 1) && (!force)) return ESP_OK;
 
 	SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
 
 	int i;
-	spi_host_t *host=(spi_host_t*)handle->host;
+	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
 
 	// find device's host bus
 	for (i=0; i<NO_DEV; i++) {
@@ -499,19 +499,19 @@ esp_err_t spi_device_select(spi_device_handle_t handle, int force)
 	}
 	SPI_CHECK(i != NO_DEV, "invalid dev handle", ESP_ERR_INVALID_ARG);
 
-	if (!(xSemaphoreTake(host->spi_bus_mutex, SPI_SEMAPHORE_WAIT))) return ESP_ERR_INVALID_STATE;
+	if (!(xSemaphoreTake(host->spi_nodma_bus_mutex, SPI_SEMAPHORE_WAIT))) return ESP_ERR_INVALID_STATE;
 
 	// Check if previously used device's bus device is the same
-	if (memcmp(&host->cur_bus_config, &handle->bus_config, sizeof(spi_bus_config_t)) != 0) {
+	if (memcmp(&host->cur_bus_config, &handle->bus_config, sizeof(spi_nodma_bus_config_t)) != 0) {
 		// device has different bus configuration, we need to reconfigure the bus
-		esp_err_t err = spi_bus_free(1, 0);
+		esp_err_t err = spi_nodma_bus_free(1, 0);
 		if (err) {
-			xSemaphoreGive(host->spi_bus_mutex);
+			xSemaphoreGive(host->spi_nodma_bus_mutex);
 			return err;
 		}
-		err = spi_bus_initialize(i, &handle->bus_config, -1);
+		err = spi_nodma_bus_initialize(i, &handle->bus_config, -1);
 		if (err) {
-			xSemaphoreGive(host->spi_bus_mutex);
+			xSemaphoreGive(host->spi_nodma_bus_mutex);
 			return err;
 		}
 	}
@@ -580,15 +580,15 @@ esp_err_t spi_device_select(spi_device_handle_t handle, int force)
 	return ESP_OK;
 }
 
-//-------------------------------------------------------
-esp_err_t spi_device_deselect(spi_device_handle_t handle)
+//-----------------------------------------------------------------------------
+esp_err_t IRAM_ATTR spi_nodma_device_deselect(spi_nodma_device_handle_t handle)
 {
 	if (handle->cfg.selected == 0) return ESP_OK;
 
 	SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
 
 	int i;
-	spi_host_t *host=(spi_host_t*)handle->host;
+	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
 
 	for (i=0; i<NO_DEV; i++) {
 		if (host->device[i] == handle) break;
@@ -602,50 +602,50 @@ esp_err_t spi_device_deselect(spi_device_handle_t handle)
 	}
 
 	handle->cfg.selected = 0;
-	xSemaphoreGive(host->spi_bus_mutex);
+	xSemaphoreGive(host->spi_nodma_bus_mutex);
 
 	return ESP_OK;
 }
 
-//--------------------------------------------
-uint32_t get_speed(spi_device_handle_t handle)
+//------------------------------------------------------------
+uint32_t spi_nodma_get_speed(spi_nodma_device_handle_t handle)
 {
-	spi_host_t *host=(spi_host_t*)handle->host;
+	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
 	uint32_t speed = 0;
-	if (spi_device_select(handle, 0) == ESP_OK) {
+	if (spi_nodma_device_select(handle, 0) == ESP_OK) {
 		if (host->hw->clock.clk_equ_sysclk == 1) speed = 80000000;
 		else speed =  80000000/(host->hw->clock.clkdiv_pre+1)/(host->hw->clock.clkcnt_n+1);
 	}
-	spi_device_deselect(handle);
+	spi_nodma_device_deselect(handle);
 	return speed;
 }
 
-//------------------------------------------------------------
-uint32_t set_speed(spi_device_handle_t handle, uint32_t speed)
+//----------------------------------------------------------------------------
+uint32_t spi_nodma_set_speed(spi_nodma_device_handle_t handle, uint32_t speed)
 {
-	spi_host_t *host=(spi_host_t*)handle->host;
+	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
 	uint32_t newspeed = 0;
-	if (spi_device_select(handle, 0) == ESP_OK) {
+	if (spi_nodma_device_select(handle, 0) == ESP_OK) {
 		handle->cfg.clock_speed_hz = speed;
-		spi_device_deselect(handle);
-		if (spi_device_select(handle, 1) == ESP_OK) {
+		spi_nodma_device_deselect(handle);
+		if (spi_nodma_device_select(handle, 1) == ESP_OK) {
 			if (host->hw->clock.clk_equ_sysclk == 1) newspeed = 80000000;
 			else newspeed =  80000000/(host->hw->clock.clkdiv_pre+1)/(host->hw->clock.clkcnt_n+1);
 		}
 	}
-	spi_device_deselect(handle);
+	spi_nodma_device_deselect(handle);
 	
 	return newspeed;
 }
 
-//---------------------------------------------------
-bool spi_uses_native_pins(spi_device_handle_t handle)
+//---------------------------------------------------------------
+bool spi_nodma_uses_native_pins(spi_nodma_device_handle_t handle)
 {
 	return handle->host->no_gpio_matrix;
 }
 
-//--------------------------------------------------------------
-void spi_get_native_pins(int host, int *sdi, int *sdo, int *sck)
+//--------------------------------------------------------------------
+void spi_nodma_get_native_pins(int host, int *sdi, int *sdo, int *sck)
 {
 	*sdo = io_signal[host].spid_native;
 	*sdi = io_signal[host].spiq_native;
@@ -653,14 +653,14 @@ void spi_get_native_pins(int host, int *sdi, int *sdo, int *sck)
 }
 
 // device must be selected!
-//-------------------------------------------------------------------------------------------
-esp_err_t IRAM_ATTR spi_transfer_data(spi_device_handle_t handle, spi_transaction_t *trans) {
+//-------------------------------------------------------------------------------------------------------------
+esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans) {
 	if (!handle) return ESP_ERR_INVALID_ARG;
 
 	// only handle 8-bit bytes transmission
 	if (((trans->length % 8) != 0) || ((trans->rxlength % 8) != 0)) return ESP_ERR_INVALID_ARG;
 
-	spi_host_t *host=(spi_host_t*)handle->host;
+	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
 	esp_err_t ret;
 	uint8_t do_deselect = 0;
     const uint8_t *txbuffer = NULL;
@@ -691,7 +691,7 @@ esp_err_t IRAM_ATTR spi_transfer_data(spi_device_handle_t handle, spi_transactio
 	while (host->hw->cmd.usr);
 
 	if (handle->cfg.selected == 0) {
-		ret = spi_device_select(handle, 0);
+		ret = spi_nodma_device_select(handle, 0);
 		if (ret) return ret;
 		do_deselect = 1;
 	}
@@ -811,7 +811,7 @@ esp_err_t IRAM_ATTR spi_transfer_data(spi_device_handle_t handle, spi_transactio
 		if (handle->cfg.post_cb) handle->cfg.post_cb(trans);
 
 		if (do_deselect) {
-			ret = spi_device_deselect(handle);
+			ret = spi_nodma_device_deselect(handle);
 			if (ret) return ret;
 		}
 		return ESP_OK;
@@ -847,7 +847,7 @@ esp_err_t IRAM_ATTR spi_transfer_data(spi_device_handle_t handle, spi_transactio
 	if (handle->cfg.post_cb) handle->cfg.post_cb(trans);
 
 	if (do_deselect) {
-		ret = spi_device_deselect(handle);
+		ret = spi_nodma_device_deselect(handle);
 		if (ret) return ret;
 	}
 
