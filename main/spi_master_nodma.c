@@ -682,12 +682,20 @@ void spi_nodma_get_native_pins(int host, int *sdi, int *sdo, int *sck)
 	*sck = io_signal[host].spiclk_native;
 }
 
-// device must be selected!
+/*
+When using  'spi_nodma_transfer_data' function we can have several scenarios:
+
+A: Send only      (trans->rxlength = 0)
+B: Receive only   (trans->txlength = 0)
+C: Send & receive (trans->txlength > 0 & trans->rxlength > 0)
+D: No operation   (trans->txlength = 0 & trans->rxlength = 0)
+
+*/
 //-------------------------------------------------------------------------------------------------------------
 esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans) {
 	if (!handle) return ESP_ERR_INVALID_ARG;
 
-	// only handle 8-bit bytes transmission
+	// ** Only handle 8-bit bytes transmission
 	if (((trans->length % 8) != 0) || ((trans->rxlength % 8) != 0)) return ESP_ERR_INVALID_ARG;
 
 	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
@@ -697,53 +705,69 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 	uint8_t *rxbuffer = NULL;
 
 	if (trans->flags & SPI_TRANS_USE_TXDATA) {
+        // Send data from 'trans->tx_data'
 		txbuffer=(uint8_t*)&trans->tx_data[0];
 	} else {
+        // Send data from 'trans->tx_buffer'
 		txbuffer=(uint8_t*)trans->tx_buffer;
 	}
 	if (trans->flags & SPI_TRANS_USE_RXDATA) {
+        // Receive data to 'trans->rx_data'
 		rxbuffer=(uint8_t*)&trans->rx_data[0];
 	} else {
+        // Receive data to 'trans->rx_buffer'
 		rxbuffer=(uint8_t*)trans->rx_buffer;
 	}
 
+	// ** Set transmit & receive length in bytes
 	uint32_t txlen = trans->length / 8;
 	uint32_t rxlen = trans->rxlength / 8;
 
 	if (txbuffer == NULL) txlen = 0;
 	if (rxbuffer == NULL) rxlen = 0;
-	if ((rxlen == 0) && (txlen == 0)) return ESP_ERR_INVALID_ARG;
+	if ((rxlen == 0) && (txlen == 0)) {
+        // ** NOTHING TO SEND or RECEIVE
+        return ESP_ERR_INVALID_ARG;
+    }
 
+    // If using 'trans->tx_data' and/or 'trans->rx_data', maximim 4 bytes can be sent/received
 	if ((txbuffer == &trans->tx_data[0]) && (txlen > 4)) return ESP_ERR_INVALID_ARG;
 	if ((rxbuffer == &trans->rx_data[0]) && (rxlen > 4)) return ESP_ERR_INVALID_ARG;
 
-	// Wait for SPI bus ready
+	// --- Wait for SPI bus ready ---
 	while (host->hw->cmd.usr);
 
+    // ** If the device was not selected, select it
 	if (handle->cfg.selected == 0) {
 		ret = spi_nodma_device_select(handle, 0);
 		if (ret) return ret;
-		do_deselect = 1;
+		do_deselect = 1;     // We will deselect the device after the operation !
 	}
 	
-	//Call pre-transmission callback, if any
+	// ** Call pre-transmission callback, if any
 	if (handle->cfg.pre_cb) handle->cfg.pre_cb(trans);
 
+    // Test if operating in full duplex mode
 	uint8_t duplex = 1;
-	if (handle->cfg.flags & SPI_DEVICE_HALFDUPLEX) duplex = 0;
-	uint32_t bits, rdbits;
+	if (handle->cfg.flags & SPI_DEVICE_HALFDUPLEX) duplex = 0; // Half duplex mode !
+
+    uint32_t bits, rdbits;
 	uint32_t wd;
 	uint8_t bc, rdidx;
-	uint32_t rdcount = rxlen;
-	uint32_t rd_read = 0;
+	uint32_t rdcount = rxlen;  // Total number of bytes to read
+	uint32_t rd_read = 0;      // Number of bytes read so far
 
 	host->hw->user.usr_mosi_highpart = 0;
-	if ((txbuffer != NULL) && (txlen > 0)) host->hw->user.usr_mosi = 1;
-	else host->hw->user.usr_mosi = 0;
 
-	if ((rxbuffer != NULL) && (rxlen > 0)) host->hw->user.usr_miso = 1;
-	else host->hw->user.usr_miso = 0;
+    // ** Check if mosi phase will be used
+    if ((txbuffer != NULL) && (txlen > 0)) host->hw->user.usr_mosi = 1;  // We have to send some data
+	else host->hw->user.usr_mosi = 0;                                    // Nothing to send, no mosi phase
 
+    // ** Check if miso phase will be used
+	if ((rxbuffer != NULL) && (rxlen > 0)) host->hw->user.usr_miso = 1;  // We have to receive some data
+	else host->hw->user.usr_miso = 0;                                    // Nothing to receive, no miso phase
+
+    // ** Check if address phase will be used
 	host->hw->user2.usr_command_value=trans->command;
 	if (handle->cfg.address_bits>32) {
 		host->hw->addr=trans->address >> 32;
@@ -752,41 +776,46 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		host->hw->addr=trans->address & 0xffffffff;
 	}
 
+	// *** If host->hw->user.usr_mosi == 1 we have to transmit some data ***
+	//     This is 0 if no data needs to be transmitted
 	if (host->hw->user.usr_mosi == 1) {
-		// === We have some txbuffer to send ===
 		uint8_t idx;
 		uint32_t count;
 
-		bits = 0;
-		rdbits = 0;
-		idx = 0;
-		count = 0;
+		bits = 0;   // remaining bits to send
+		rdbits = 0; // remaining bits to receive
+		idx = 0;    // index to spi hw data_buf (16 32-bit words, 64 bytes, 512 bits)
+		count = 0;  // number of bytes transmited so far
 
+        // ** Transimit 'txlen' bytes
 		while (count < txlen) {
 			wd = 0;
 			for (bc=0;bc<32;bc+=8) {
 				wd |= (uint32_t)txbuffer[count] << bc;
-				count++;
-				bits += 8;
-				if (count == txlen) break;
+				count++;                    // Increment sent data count
+				bits += 8;                  // Increment bits count
+				if (count == txlen) break;  // If all transmit data pushed to hw spi buffer break from the loop
 			}
 			host->hw->data_buf[idx] = wd;
 			idx++;
 			if (idx == 16) {
-				// SPI buffer full, transfer txbuffer
-				host->hw->mosi_dlen.usr_mosi_dbitlen=bits-1;
-				if (duplex) {
+				// Hw SPI buffer full (all 64 bytes filled, START THE TRANSSACTION
+				host->hw->mosi_dlen.usr_mosi_dbitlen=bits-1;            // Set mosi dbitlen
+                if ((duplex) && (host->hw->user.usr_miso == 1)) {
+                    // In full duplex mode we are receiving while sending !
 			    	if (rdcount <= 64) rdbits = rdcount * 8;
 			    	else rdbits = 64 * 8;
-					host->hw->mosi_dlen.usr_mosi_dbitlen = rdbits-1;
+					host->hw->mosi_dlen.usr_mosi_dbitlen = rdbits-1;    // Set miso dbitlen
 				}
-				else host->hw->miso_dlen.usr_miso_dbitlen = 0;
-				// Start transfer
+				else host->hw->miso_dlen.usr_miso_dbitlen = 0;          // In half duplex mode nothing will be received
+
+				// ** Start the transaction ***
 				host->hw->cmd.usr=1;
+                // Wait the transaction to finish
 				while (host->hw->cmd.usr);
 
 				if ((duplex) && (host->hw->user.usr_miso == 1)) {
-					// in duplex mode transfer received txbuffer to input buffer
+					// *** in full duplex mode transfer received data to input buffer ***
 					rdidx = 0;
 			    	while (rdbits > 0) {
 						wd = host->hw->data_buf[rdidx];
@@ -800,26 +829,29 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 			    	}
 				}
 
-				bits = 0;
-				idx = 0;
+				bits = 0;   // nothing in hw spi buffer yet
+				idx = 0;    // start from the begining of the hw spi buffer
 			}
 		}
+		// *** All transmit data are sent, BUT SOME MAY STILL BE IN THE HW SPI TRANSMIT BUFFER ***
 		if (bits > 0) {
-			// more txbuffer waits for transfer
-			host->hw->mosi_dlen.usr_mosi_dbitlen=bits-1;
-			if (duplex) {
+			// ** WE HAVE SOME DATA IN THE HW SPI TRANSMIT BUFFER
+			host->hw->mosi_dlen.usr_mosi_dbitlen=bits-1;            // Set mosi dbitlen
+            if ((duplex) && (host->hw->user.usr_miso == 1)) {
+                // In full duplex mode we are receiving while sending !
 		    	if (rdcount <= 64) rdbits = rdcount * 8;
 		    	else rdbits = 64 * 8;
-				host->hw->mosi_dlen.usr_mosi_dbitlen = rdbits-1;
+				host->hw->mosi_dlen.usr_mosi_dbitlen = rdbits-1;    // Set miso dbitlen
 			}
-			else host->hw->miso_dlen.usr_miso_dbitlen = 0;
-			// Start transfer
+			else host->hw->miso_dlen.usr_miso_dbitlen = 0;          // In half duplex mode nothing will be received
+
+			// ** Start the transaction ***
 			host->hw->cmd.usr=1;
-			// Wait for SPI bus ready
+            // Wait the transaction to finish
 			while (host->hw->cmd.usr);
 
 			if ((duplex) && (host->hw->user.usr_miso == 1))  {
-				// transfer received txbuffer to input buffer
+                // *** in full duplex mode transfer received data to input buffer ***
 				rdidx = 0;
 		    	while (rdbits > 0) {
 					wd = host->hw->data_buf[rdidx];
@@ -836,18 +868,24 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		if (duplex) rdcount = 0;
 	}
 
+    // *** If rdcount = 0 we have nothing to receive and we exit the function
+    //     This is true if no data receive was requested
+    //     or the data was received in Full duplex mode during the transmissio
 	if (rdcount == 0) {
-		//Call post-transmission callback, if any
+		// ** Call post-transmission callback, if any
 		if (handle->cfg.post_cb) handle->cfg.post_cb(trans);
 
 		if (do_deselect) {
+            // Spi device was selected in this function, we have to deselect it now 
 			ret = spi_nodma_device_deselect(handle);
 			if (ret) return ret;
 		}
 		return ESP_OK;
 	}
 
-	// Read txbuffer (after sending)
+    // *** If rdcount > 0 we have to receive some data
+    //     This is true if we operate in Half duplex mode
+    //     or not all data was received in Full duplex mode during the transmissio (trans->rxlength > trans->txlength)
     while (rdcount > 0) {
     	if (rdcount <= 64) rdbits = rdcount * 8;
     	else rdbits = 64 * 8;
@@ -855,11 +893,13 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		// Load receive buffer
 		host->hw->mosi_dlen.usr_mosi_dbitlen=0;
 		host->hw->miso_dlen.usr_miso_dbitlen=rdbits-1;
-		// Start transfer
+
+        // ** Start the transaction ***
 		host->hw->cmd.usr=1;
-		// Wait for SPI bus ready
+        // Wait the transaction to finish
 		while (host->hw->cmd.usr);
 
+        // *** transfer received data to input buffer ***
 		rdidx = 0;
     	while (rdbits > 0) {
 			wd = host->hw->data_buf[rdidx];
@@ -873,7 +913,7 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
     	}
     }
 
-	//Call post-transmission callback, if any
+	// ** Call post-transmission callback, if any
 	if (handle->cfg.post_cb) handle->cfg.post_cb(trans);
 
 	if (do_deselect) {
@@ -883,4 +923,3 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 
 	return ESP_OK;
 }
-
