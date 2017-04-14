@@ -337,6 +337,7 @@ esp_err_t spi_nodma_bus_add_device(spi_nodma_host_device_t host, spi_nodma_bus_c
 	}
 	
 	int freecs, maxdev;
+    int apbclk=APB_CLK_FREQ;
 
 	SPI_CHECK(spihost[host] != NULL, "host not initialized", ESP_ERR_INVALID_STATE);
     if (dev_config->spics_io_num >= 0) {
@@ -358,6 +359,9 @@ esp_err_t spi_nodma_bus_add_device(spi_nodma_host_device_t host, spi_nodma_bus_c
     //The hardware looks like it would support this, but actually setting cs_ena_pretrans when transferring in full
     //duplex mode does absolutely nothing on the ESP32.
     SPI_CHECK(dev_config->cs_ena_pretrans==0 || (dev_config->flags & SPI_DEVICE_HALFDUPLEX), "cs pretrans delay incompatible with full-duplex", ESP_ERR_INVALID_ARG);
+    //Speeds >=40MHz over GPIO matrix needs a dummy cycle, but these don't work for full-duplex connections.
+    SPI_CHECK(!( ((dev_config->flags & SPI_DEVICE_HALFDUPLEX)==0) && (dev_config->clock_speed_hz > ((apbclk*2)/5)) && (!spihost[host]->no_gpio_matrix)),
+            "No speeds >26MHz supported for full-duplex, GPIO-matrix SPI transfers", ESP_ERR_INVALID_ARG);
 
     //Allocate memory for device
     spi_nodma_device_t *dev=malloc(sizeof(spi_nodma_device_t));
@@ -433,9 +437,13 @@ static int IRAM_ATTR spi_freq_for_pre_n(int fapb, int pre, int n) {
     return (fapb / (pre * n));
 }
 
+/*
+ * Set the SPI clock to a certain frequency. Returns the effective frequency set, which may be slightly
+ * different from the requested frequency.
+ */
 //------------------------------------------------------------------------------------
-static void IRAM_ATTR spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cycle) {
-    int pre, n, h, l;
+static int IRAM_ATTR spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cycle) {
+   int pre, n, h, l, eff_clk;
 
     //In hw, n, h and l are 1-64, pre is 1-8K. Value written to register is one lower than used value.
     if (hz>((fapb/4)*3)) {
@@ -445,6 +453,7 @@ static void IRAM_ATTR spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cy
         hw->clock.clkcnt_n=0;
         hw->clock.clkdiv_pre=0;
         hw->clock.clk_equ_sysclk=1;
+        eff_clk=fapb;
     } else {
         //For best duty cycle resolution, we want n to be as close to 32 as possible, but
         //we also need a pre/n combo that gets us as close as possible to the intended freq.
@@ -480,7 +489,9 @@ static void IRAM_ATTR spi_set_clock(spi_dev_t *hw, int fapb, int hz, int duty_cy
         hw->clock.clkdiv_pre=pre-1;
         hw->clock.clkcnt_h=h-1;
         hw->clock.clkcnt_l=l-1;
+        eff_clk=spi_freq_for_pre_n(fapb, pre, n);
     }
+    return eff_clk;
 }
 
 //--------------------------------------------------------------------------------------
@@ -521,14 +532,27 @@ esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, in
 		//Assumes a hardcoded 80MHz Fapb for now. ToDo: figure out something better once we have
 		//clock scaling working.
 		int apbclk=APB_CLK_FREQ;
-		spi_set_clock(host->hw, apbclk, handle->cfg.clock_speed_hz, handle->cfg.duty_cycle_pos);
+		int effclk=spi_set_clock(host->hw, apbclk, handle->cfg.clock_speed_hz, handle->cfg.duty_cycle_pos);
 		//Configure bit order
 		host->hw->ctrl.rd_bit_order=(handle->cfg.flags & SPI_DEVICE_RXBIT_LSBFIRST)?1:0;
 		host->hw->ctrl.wr_bit_order=(handle->cfg.flags & SPI_DEVICE_TXBIT_LSBFIRST)?1:0;
 		
 		//Configure polarity
-		//SPI iface needs to be configured for a delay unless it is not routed through GPIO and clock is >=apb/2
-		int nodelay=(host->no_gpio_matrix && handle->cfg.clock_speed_hz >= (apbclk/2));
+        //SPI iface needs to be configured for a delay in some cases.
+		int nodelay=0;
+        int extra_dummy=0;
+        if (host->no_gpio_matrix) {
+            if (effclk >= apbclk/2) {
+                nodelay=1;
+            }
+        } else {
+            if (effclk >= apbclk/2) {
+                nodelay=1;
+                extra_dummy=1;          //Note: This only works on half-duplex connections. spi_bus_add_device checks for this.
+            } else if (effclk >= apbclk/4) {
+                nodelay=1;
+            }
+        }
 		if (handle->cfg.mode==0) {
 			host->hw->pin.ck_idle_edge=0;
 			host->hw->user.ck_out_edge=0;
@@ -548,11 +572,11 @@ esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, in
 		}
 
 		//Configure bit sizes, load addr and command
-		host->hw->user.usr_dummy=(handle->cfg.dummy_bits)?1:0;
+		host->hw->user.usr_dummy=(handle->cfg.dummy_bits+extra_dummy)?1:0;
 		host->hw->user.usr_addr=(handle->cfg.address_bits)?1:0;
 		host->hw->user.usr_command=(handle->cfg.command_bits)?1:0;
 		host->hw->user1.usr_addr_bitlen=handle->cfg.address_bits-1;
-		host->hw->user1.usr_dummy_cyclelen=handle->cfg.dummy_bits-1;
+		host->hw->user1.usr_dummy_cyclelen=handle->cfg.dummy_bits+extra_dummy-1;
 		host->hw->user2.usr_command_bitlen=handle->cfg.command_bits-1;
 		//Configure misc stuff
 		host->hw->user.doutdin=(handle->cfg.flags & SPI_DEVICE_HALFDUPLEX)?0:1;
@@ -755,7 +779,7 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 				host->hw->cmd.usr=1;
 				while (host->hw->cmd.usr);
 
-				if ((duplex) && (host->hw->user.usr_miso = 1)) {
+				if ((duplex) && (host->hw->user.usr_miso == 1)) {
 					// in duplex mode transfer received txbuffer to input buffer
 					rdidx = 0;
 			    	while (rdbits > 0) {
@@ -788,7 +812,7 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 			// Wait for SPI bus ready
 			while (host->hw->cmd.usr);
 
-			if ((duplex) && (host->hw->user.usr_miso = 1)) {
+			if ((duplex) && (host->hw->user.usr_miso == 1)) {
 				// transfer received txbuffer to input buffer
 				rdidx = 0;
 		    	while (rdbits > 0) {

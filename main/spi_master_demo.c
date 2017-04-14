@@ -250,7 +250,7 @@ static uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
 static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
     uint32_t speeds[6] = {5000000,8000000,16000000,20000000,30000000,40000000};
-    int speed_idx = 0;
+    int speed_idx = 0, max_speed=5;
 	esp_err_t ret;
     uint16_t line[2][320];
     int x, y, ry;
@@ -308,10 +308,20 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		t1 = clock() - tstart;
 		// Check line
 		ret = disp_spi_read_data(spi, 0, ry, 319, ry, 320, (uint8_t *)(line[0]));
-		if (ret == ESP_OK) line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), 320*2);
+		if (ret == ESP_OK) {
+            line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), 320*2);
+        }
 
 		ret =spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
+        if (line_check) {
+            if (speed_idx) max_speed = speed_idx - 1;
+            printf("=== MAX SPI CLOCK = %d\r\n", speeds[max_speed]);
+            speed_idx = 0;
+            spi_nodma_set_speed(spi, speeds[speed_idx]);
+            ili_init(spi);
+            continue;
+        }
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
 		// *** Display pixels using direct mode
@@ -386,7 +396,7 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 
 		// Change SPI speed
 		speed_idx++;
-		if (speed_idx > 5) speed_idx = 0;
+		if (speed_idx > max_speed) speed_idx = 0;
 		spi_nodma_set_speed(spi, speeds[speed_idx]);
     }
 }

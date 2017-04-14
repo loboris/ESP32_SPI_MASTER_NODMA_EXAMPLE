@@ -151,6 +151,9 @@ typedef struct spi_nodma_device_interface_config_t* spi_nodma_device_interface_c
  * 
  * ### If selected SPI host device bus is not yet initialized, it is initialized first with 'bus_config' function ###
  *
+ * @note While in general, speeds up to 80MHz on the dedicated SPI pins and 40MHz on GPIO-matrix-routed pins are
+ *       supported, full-duplex transfers routed over the GPIO matrix only support speeds up to 26MHz.
+ *
  * @param host SPI peripheral to allocate device on (HSPI or VSPI)
  * @param dev_config SPI interface protocol config for the device
  * @param bus_config Pointer to a spi_nodma_bus_config_t struct specifying how the host device bus should be initialized
