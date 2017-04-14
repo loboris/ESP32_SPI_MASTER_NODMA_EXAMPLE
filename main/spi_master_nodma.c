@@ -529,9 +529,15 @@ esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, in
 
 	//Reconfigure according to device settings, but only if the device changed or forced.
 	if ((force) || (host->device[host->cur_device] != handle)) {
-		//Assumes a hardcoded 80MHz Fapb for now. ToDo: figure out something better once we have
-		//clock scaling working.
+	    //Assumes a hardcoded 80MHz Fapb for now. ToDo: figure out something better once we have clock scaling working.
 		int apbclk=APB_CLK_FREQ;
+
+	    //Speeds >=40MHz over GPIO matrix needs a dummy cycle, but these don't work for full-duplex connections.
+	    if (((handle->cfg.flags & SPI_DEVICE_HALFDUPLEX) == 0) && (handle->cfg.clock_speed_hz > ((apbclk*2)/5)) && (!host->no_gpio_matrix)) {
+	    	// set speed to 32 MHz
+	    	handle->cfg.clock_speed_hz = (apbclk*2)/5;
+	    }
+
 		int effclk=spi_set_clock(host->hw, apbclk, handle->cfg.clock_speed_hz, handle->cfg.duty_cycle_pos);
 		//Configure bit order
 		host->hw->ctrl.rd_bit_order=(handle->cfg.flags & SPI_DEVICE_RXBIT_LSBFIRST)?1:0;
@@ -548,7 +554,7 @@ esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, in
         } else {
             if (effclk >= apbclk/2) {
                 nodelay=1;
-                extra_dummy=1;          //Note: This only works on half-duplex connections. spi_bus_add_device checks for this.
+                extra_dummy=1;          //Note: This only works on half-duplex connections. spi_nodma_bus_add_device checks for this.
             } else if (effclk >= apbclk/4) {
                 nodelay=1;
             }
@@ -650,8 +656,8 @@ uint32_t spi_nodma_set_speed(spi_nodma_device_handle_t handle, uint32_t speed)
 	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
 	uint32_t newspeed = 0;
 	if (spi_nodma_device_select(handle, 0) == ESP_OK) {
-		handle->cfg.clock_speed_hz = speed;
 		spi_nodma_device_deselect(handle);
+		handle->cfg.clock_speed_hz = speed;
 		if (spi_nodma_device_select(handle, 1) == ESP_OK) {
 			if (host->hw->clock.clk_equ_sysclk == 1) newspeed = 80000000;
 			else newspeed =  80000000/(host->hw->clock.clkdiv_pre+1)/(host->hw->clock.clkcnt_n+1);
@@ -812,7 +818,7 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 			// Wait for SPI bus ready
 			while (host->hw->cmd.usr);
 
-			if ((duplex) && (host->hw->user.usr_miso == 1)) {
+			if ((duplex) && (host->hw->user.usr_miso == 1))  {
 				// transfer received txbuffer to input buffer
 				rdidx = 0;
 		    	while (rdbits > 0) {

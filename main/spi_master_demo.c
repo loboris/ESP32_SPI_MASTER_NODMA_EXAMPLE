@@ -249,8 +249,9 @@ static uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
 //--------------------------------------------------------------------------------------
 static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
-    uint32_t speeds[6] = {5000000,8000000,16000000,20000000,30000000,40000000};
-    int speed_idx = 0, max_speed=5;
+    uint32_t speeds[7] = {5000000,8000000,16000000,20000000,30000000,40000000,80000000};
+    int speed_idx = 0, max_speed=6, max_rdspeed=99;
+    uint32_t change_speed, rd_clk;
 	esp_err_t ret;
     uint16_t line[2][320];
     int x, y, ry;
@@ -307,24 +308,50 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		}
 		t1 = clock() - tstart;
 		// Check line
+		if (speed_idx > max_rdspeed) {
+			// Set speed to max read speed
+			change_speed = spi_nodma_set_speed(spi, speeds[max_rdspeed]);
+			assert(change_speed > 0 );
+			ret = spi_nodma_device_select(spi, 0);
+			assert(ret==ESP_OK);
+			rd_clk = speeds[max_rdspeed];
+		}
+		else rd_clk = speeds[speed_idx];
+
 		ret = disp_spi_read_data(spi, 0, ry, 319, ry, 320, (uint8_t *)(line[0]));
 		if (ret == ESP_OK) {
             line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), 320*2);
         }
+		if (speed_idx > max_rdspeed) {
+			// Restore spi speed
+			change_speed = spi_nodma_set_speed(spi, speeds[speed_idx]);
+			assert(change_speed > 0 );
+		}
 
 		ret =spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
-        if (line_check) {
-            if (speed_idx) max_speed = speed_idx - 1;
-            printf("=== MAX SPI CLOCK = %d\r\n", speeds[max_speed]);
-            speed_idx = 0;
-            spi_nodma_set_speed(spi, speeds[speed_idx]);
-            ili_init(spi);
-            continue;
+		if (line_check) {
+			// Error checking line
+			if (max_rdspeed > speed_idx) {
+				// speed probably too high for read
+				if (speed_idx) max_rdspeed = speed_idx - 1;
+				else max_rdspeed = 0;
+				printf("### MAX READ SPI CLOCK = %d ###\r\n", speeds[max_rdspeed]);
+			}
+			else {
+				// Set new max spi clock, reinitialize the display
+				if (speed_idx) max_speed = speed_idx - 1;
+				else max_speed = 0;
+				printf("### MAX SPI CLOCK = %d ###\r\n", speeds[max_speed]);
+				speed_idx = 0;
+				spi_nodma_set_speed(spi, speeds[speed_idx]);
+				ili_init(spi);
+				continue;
+			}
         }
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
-		// *** Display pixels using direct mode
+		// *** Display pixels
 		uint8_t clidx = 0;
 		color = 0xF800;
 		tstart = clock();
@@ -351,7 +378,7 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		t2 = clock() - tstart;
 		vTaskDelay(1000 / portTICK_RATE_MS);
 		
-		// *** Clear screen using direct mode
+		// *** Clear screen
 		color = 0xFFE0;
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
@@ -380,11 +407,15 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 
 		// *** Print info
 		printf("-------------\r\n");
-		printf(" Disp clock = %5.2f MHz (%5.2f)\r\n", (float)((float)(spi_nodma_get_speed(spi))/1000000.0), (float)(speeds[speed_idx])/1000000.0);
+		printf(" Disp clock = %5.2f MHz (requested: %5.2f)\r\n", (float)((float)(spi_nodma_get_speed(spi))/1000000.0), (float)(speeds[speed_idx])/1000000.0);
 		printf("      Lines = %5d  ms (240 lines of 320 pixels)\r\n",t1);
 		printf(" Read check   ");
-		if (line_check == 0) printf("   OK, line %d\r\n", ry);
-		else printf("  Err, line %d\r\n", ry);
+		if (line_check == 0) printf("   OK, line %d", ry);
+		else printf("  Err, line %d", ry);
+		if (speed_idx > max_rdspeed) {
+			printf(" (Read clock = %5.2f MHz)", (float)(rd_clk/1000000.0));
+		}
+		printf("\r\n");
 		printf("     Pixels = %5d  ms (320x240)\r\n",t2);
 		printf("        Cls = %5d  ms (320x240)\r\n",t3);
 #ifdef USE_TOUCH
@@ -397,7 +428,8 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		// Change SPI speed
 		speed_idx++;
 		if (speed_idx > max_speed) speed_idx = 0;
-		spi_nodma_set_speed(spi, speeds[speed_idx]);
+		change_speed = spi_nodma_set_speed(spi, speeds[speed_idx]);
+		assert(change_speed > 0 );
     }
 }
 
@@ -421,7 +453,8 @@ void app_main()
         .mode=0,                                //SPI mode 0
         .spics_io_num=-1,                       //we will use external CS pin
 		.spics_ext_io_num=PIN_NUM_CS,           //external CS pin
-		.flags=SPI_DEVICE_HALFDUPLEX,           //Set half duplex mode (**IF NOT SET, READ FROM DISPLAY MEMORY WILL NOT WORK**)
+		//.flags=SPI_DEVICE_HALFDUPLEX,           //Set half duplex mode (Full duplex mode can also be set by commenting this line
+												// but we don't need full duplex in  this example
 		// We can use pre_cb callback to activate DC, but we are handling DC in low-level functions, so it is not necessary
         //.pre_cb=ili_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
     };
@@ -438,7 +471,7 @@ void app_main()
 
 	vTaskDelay(500 / portTICK_RATE_MS);
 	printf("\r\n===================================\r\n");
-	printf("spi_master_nodma demo, LoBo 03/2017\r\n");
+	printf("spi_master_nodma demo, LoBo 04/2017\r\n");
 	printf("===================================\r\n\r\n");
 
 	//Initialize the SPI bus and attach the LCD to the SPI bus

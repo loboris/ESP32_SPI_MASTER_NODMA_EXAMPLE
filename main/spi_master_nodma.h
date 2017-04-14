@@ -201,6 +201,7 @@ uint32_t spi_nodma_get_speed(spi_nodma_device_handle_t handle);
  * 
  * @return 
  *         - actuall SPI clock
+ *         - 0 if speed cannot be set
  */
 uint32_t spi_nodma_set_speed(spi_nodma_device_handle_t handle, uint32_t speed);
 
