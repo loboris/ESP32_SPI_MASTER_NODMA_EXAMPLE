@@ -695,7 +695,7 @@ D: No operation   (trans->txlength = 0 & trans->rxlength = 0)
 esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans) {
 	if (!handle) return ESP_ERR_INVALID_ARG;
 
-	// ** Only handle 8-bit bytes transmission
+	// *** For now we can only handle 8-bit bytes transmission
 	if (((trans->length % 8) != 0) || ((trans->rxlength % 8) != 0)) return ESP_ERR_INVALID_ARG;
 
 	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
@@ -726,11 +726,11 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 	if (txbuffer == NULL) txlen = 0;
 	if (rxbuffer == NULL) rxlen = 0;
 	if ((rxlen == 0) && (txlen == 0)) {
-        // ** NOTHING TO SEND or RECEIVE
+        // ** NOTHING TO SEND or RECEIVE, return
         return ESP_ERR_INVALID_ARG;
     }
 
-    // If using 'trans->tx_data' and/or 'trans->rx_data', maximim 4 bytes can be sent/received
+    // If using 'trans->tx_data' and/or 'trans->rx_data', maximum 4 bytes can be sent/received
 	if ((txbuffer == &trans->tx_data[0]) && (txlen > 4)) return ESP_ERR_INVALID_ARG;
 	if ((rxbuffer == &trans->rx_data[0]) && (rxlen > 4)) return ESP_ERR_INVALID_ARG;
 
@@ -776,8 +776,10 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		host->hw->addr=trans->address & 0xffffffff;
 	}
 
+	// ---------------------------------------------------------------------
 	// *** If host->hw->user.usr_mosi == 1 we have to transmit some data ***
-	//     This is 0 if no data needs to be transmitted
+	//     host->hw->user.usr_mosi == 0  if no data needs to be transmitted
+	// ---------------------------------------------------------------------
 	if (host->hw->user.usr_mosi == 1) {
 		uint8_t idx;
 		uint32_t count;
@@ -785,7 +787,7 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		bits = 0;   // remaining bits to send
 		rdbits = 0; // remaining bits to receive
 		idx = 0;    // index to spi hw data_buf (16 32-bit words, 64 bytes, 512 bits)
-		count = 0;  // number of bytes transmited so far
+		count = 0;  // number of bytes transmitted so far
 
         // ** Transimit 'txlen' bytes
 		while (count < txlen) {
@@ -801,7 +803,8 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 			if (idx == 16) {
 				// Hw SPI buffer full (all 64 bytes filled, START THE TRANSSACTION
 				host->hw->mosi_dlen.usr_mosi_dbitlen=bits-1;            // Set mosi dbitlen
-                if ((duplex) && (host->hw->user.usr_miso == 1)) {
+
+				if ((duplex) && (host->hw->user.usr_miso == 1)) {
                     // In full duplex mode we are receiving while sending !
 			    	if (rdcount <= 64) rdbits = rdcount * 8;
 			    	else rdbits = 64 * 8;
@@ -824,7 +827,11 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 							rxbuffer[rd_read++] = (uint8_t)((wd >> bc) & 0xFF);
 							rdcount--;
 							rdbits -= 8;
-							if (rdcount == 0) break;
+							if (rdcount == 0) {
+								// Finished reading data
+								host->hw->user.usr_miso = 0;
+								break;
+							}
 						}
 			    	}
 				}
@@ -833,11 +840,13 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 				idx = 0;    // start from the begining of the hw spi buffer
 			}
 		}
-		// *** All transmit data are sent, BUT SOME MAY STILL BE IN THE HW SPI TRANSMIT BUFFER ***
+		// *** All transmit data are sent or oushed to hw spi buffer
+		// bits > 0  IF SOME DATA STILL WAITING IN THE HW SPI TRANSMIT BUFFER
 		if (bits > 0) {
 			// ** WE HAVE SOME DATA IN THE HW SPI TRANSMIT BUFFER
 			host->hw->mosi_dlen.usr_mosi_dbitlen=bits-1;            // Set mosi dbitlen
-            if ((duplex) && (host->hw->user.usr_miso == 1)) {
+
+			if ((duplex) && (host->hw->user.usr_miso == 1)) {
                 // In full duplex mode we are receiving while sending !
 		    	if (rdcount <= 64) rdbits = rdcount * 8;
 		    	else rdbits = 64 * 8;
@@ -860,7 +869,11 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 						rxbuffer[rd_read++] = (uint8_t)((wd >> bc) & 0xFF);
 						rdcount--;
 						rdbits -= 8;
-						if (rdcount == 0) break;
+						if (rdcount == 0) {
+							// Finished reading data
+							host->hw->user.usr_miso = 0;
+							break;
+						}
 					}
 		    	}
 			}
@@ -868,9 +881,11 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		if (duplex) rdcount = 0;
 	}
 
-    // *** If rdcount = 0 we have nothing to receive and we exit the function
-    //     This is true if no data receive was requested
-    //     or the data was received in Full duplex mode during the transmissio
+	// ------------------------------------------------------------------------
+	// *** If rdcount = 0 we have nothing to receive and we exit the function
+    //     This is true if no data receive was requested,
+    //     or the data was received in Full duplex mode during the transmission
+	// ------------------------------------------------------------------------
 	if (rdcount == 0) {
 		// ** Call post-transmission callback, if any
 		if (handle->cfg.post_cb) handle->cfg.post_cb(trans);
@@ -883,9 +898,11 @@ esp_err_t IRAM_ATTR spi_nodma_transfer_data(spi_nodma_device_handle_t handle, sp
 		return ESP_OK;
 	}
 
+	// ----------------------------------------------------------------------------------------------------------------
     // *** If rdcount > 0 we have to receive some data
-    //     This is true if we operate in Half duplex mode
-    //     or not all data was received in Full duplex mode during the transmissio (trans->rxlength > trans->txlength)
+    //     This is true if we operate in Half duplex mode when receiving after transmission is done,
+    //     or not all data was received in Full duplex mode during the transmission (trans->rxlength > trans->txlength)
+	// ----------------------------------------------------------------------------------------------------------------
     while (rdcount > 0) {
     	if (rdcount <= 64) rdbits = rdcount * 8;
     	else rdbits = 64 * 8;
