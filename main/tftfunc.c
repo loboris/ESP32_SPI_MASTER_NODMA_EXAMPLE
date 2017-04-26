@@ -141,14 +141,6 @@ void IRAM_ATTR disp_spi_transfer_addrwin(spi_nodma_device_handle_t handle, uint1
 	while (handle->host->hw->cmd.usr);
 }
 
-// Convert 16-bit RGB565 color to 3-byte rgb values
-//----------------------------------------------------------------------------
-void IRAM_ATTR color2rgb(uint16_t color, uint8_t *r, uint8_t *g, uint8_t *b) {
-	*r = (color & 0xF800) >> 9;
-    *g = (color & 0x07E0) >> 3;
-    *b = (color & 0x001F) << 2;
-}
-
 // Set one display pixel to given color, address window already set
 //----------------------------------------------------------------------------------------
 void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_t color) {
