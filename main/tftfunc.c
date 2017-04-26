@@ -141,14 +141,12 @@ void IRAM_ATTR disp_spi_transfer_addrwin(spi_nodma_device_handle_t handle, uint1
 	while (handle->host->hw->cmd.usr);
 }
 
+// Convert 16-bit RGB565 color to 3-byte rgb values
 //----------------------------------------------------------------------------
 void IRAM_ATTR color2rgb(uint16_t color, uint8_t *r, uint8_t *g, uint8_t *b) {
-    *r = (color & 0xF800) >> 11;
-    *g = (color & 0x07E0) >> 5;
-    *b = color & 0x001F;
-    *r = (*r * 255) / 31;
-    *g = (*g * 255) / 63;
-    *b = (*b * 255) / 31;
+	*r = (color & 0xF800) >> 9;
+    *g = (color & 0x07E0) >> 3;
+    *b = (color & 0x001F) << 2;
 }
 
 // Set one display pixel to given color, address window already set
@@ -166,8 +164,9 @@ void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_
         wd |= (uint32_t)(color & 0xff) << 8;
     }
     else {
-        uint8_t r, g, b;
-        color2rgb(color, &r, &g, &b);
+        uint8_t r = (color & 0xF800) >> 9;
+        uint8_t g = (color & 0x07E0) >> 3;
+        uint8_t b = (color & 0x001F) << 2;
         wd = r;
         wd |= (uint32_t)(g) << 8;
         wd |= (uint32_t)(b) << 16;
@@ -233,10 +232,7 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
                 wd |= (uint32_t)color[1];
                 wd |= (uint32_t)color[0] << 8;
             }
-            else {
-            	clr = (uint16_t)color[0] | ((uint16_t)color[1] << 8);
-                color2rgb(clr, &red, &green, &blue);
-            }
+            else clr = (uint16_t)color[0] | ((uint16_t)color[1] << 8);
 		}
 		else {
 			// get color data from buffer
@@ -245,12 +241,12 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
                 wd |= (uint32_t)color[(count<<1)+1] << 8;
                 wbits += 16;
             }
-            else {
-            	clr = (uint16_t)color[(count<<1)] | ((uint16_t)color[(count<<1)+1] << 8);
-                color2rgb(clr, &red, &green, &blue);
-            }
+            else clr = (uint16_t)color[(count<<1)] | ((uint16_t)color[(count<<1)+1] << 8);
 		}
         if (color_bits == 24) {
+        	red = (clr & 0xF800) >> 9;
+            green = (clr & 0x07E0) >> 3;
+            blue = (clr & 0x001F) << 2;
             if (wbits == 32) {
                 handle->host->hw->data_buf[idx] = wd;
                 wd = 0;

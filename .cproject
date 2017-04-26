@@ -36,6 +36,7 @@
 									<listOptionValue builtIn="false" value="&quot;${IDF_PATH}/components/sdmmc/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${IDF_PATH}/components/fatfs/src&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${IDF_PATH}/components/spi_flash/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${IDF_PATH}/components/soc/esp32/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ESP32_SPI_MASTER_NODMA_EXAMPLE}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ESP32_SPI_MASTER_NODMA_EXAMPLE/build/include}&quot;"/>
 									<listOptionValue builtIn="false" value="/home/LoBo2_Razno/ESP32/xtensa-esp32-elf/bin"/>
@@ -70,7 +71,7 @@
 		</cconfiguration>
 	</storageModule>
 	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
-        <project id="ESP32_SPI_MASTER_NODMA_EXAMPLE.null.582510245" name="ESP32_SPI_MASTER_NODMA_EXAMPLE"/>
+		<project id="ESP32_SPI_MASTER_NODMA_EXAMPLE.null.582510245" name="ESP32_SPI_MASTER_NODMA_EXAMPLE"/>
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 	<storageModule moduleId="refreshScope" versionNumber="2">

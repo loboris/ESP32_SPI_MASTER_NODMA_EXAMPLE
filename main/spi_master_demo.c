@@ -13,7 +13,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
-#include "soc/gpio_struct.h"
 #include "driver/gpio.h"
 #include "tftfunc.h"
 
@@ -137,7 +136,7 @@ static const uint8_t ILI9488_init[] = {
 	0xA9,
 	0x51,
 	0x2C,
-	0x82,    // D7 stream, loose
+	0x02,    // D7 stream, loose
 
 
   0x11, DELAY,  //Exit Sleep
@@ -321,7 +320,7 @@ static uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
 static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
 	int max_speed = 5;
-    uint32_t speeds[6] = {5000000,8000000,16000000,20000000,30000000,40000000};
+    uint32_t speeds[6] = {6000000,8000000,16000000,20000000,24000000,40000000};
 
     int speed_idx = 0, max_rdspeed=99;
     uint32_t change_speed, rd_clk;
@@ -531,7 +530,7 @@ void app_main()
         .quadhd_io_num=-1
     };
     spi_nodma_device_interface_config_t devcfg={
-        .clock_speed_hz=5000000,                //Initial clock out at 5 MHz
+        .clock_speed_hz=6000000,                //Initial clock out at 6 MHz
         .mode=0,                                //SPI mode 0
         .spics_io_num=-1,                       //we will use external CS pin
 		.spics_ext_io_num=PIN_NUM_CS,           //external CS pin
