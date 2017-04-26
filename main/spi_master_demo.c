@@ -29,13 +29,19 @@
 */
 
 // comment this if your display does not have touch screen
-#define USE_TOUCH
+//#define USE_TOUCH
+
+#define DISPLAY_READ 0
 
 // define which spi bus to use VSPI_HOST or HSPI_HOST
 #define SPI_BUS VSPI_HOST
 
 #define DELAY 0x80
 
+#define DISPLAY_TYPE    1
+
+static int display_width = 320;
+static int display_height = 240;
 
 // We can use pre_cb callback to activate DC, but we are handling DC in low-level functions, so it is not necessary
 
@@ -82,6 +88,62 @@ static const uint8_t ILI9341_init[] = {
   ILI9341_SLPOUT, DELAY, 							//  Sleep out
   120,			 									//  120 ms delay
   TFT_DISPON, 0,
+};
+
+// Init for ILI7341
+// ------------------------------------
+static const uint8_t ILI9488_init[] = {
+  16,                   					        // 16 commands in list
+  ILI9341_SWRESET, DELAY,   						//  1: Software reset, no args, w/delay
+  200,												//     200 ms delay
+
+  0xE0, 15, 0x00, 0x03, 0x09, 0x08, 0x16, 0x0A, 0x3F, 0x78, 0x4C, 0x09, 0x0A, 0x08, 0x16, 0x1A, 0x0F,
+  0xE1, 15,	0x00, 0x16, 0x19, 0x03, 0x0F, 0x05, 0x32, 0x45, 0x46, 0x04, 0x0E, 0x0D, 0x35, 0x37, 0x0F,
+  0xC0, 2,   //Power Control 1
+	0x17,    //Vreg1out
+	0x15,    //Verg2out
+
+  0xC1, 1,   //Power Control 2
+	0x41,    //VGH,VGL
+
+  0xC5, 3,   //Power Control 3
+	0x00,
+	0x12,    //Vcom
+	0x80,
+
+  TFT_MADCTL, 1,									// Memory Access Control (orientation)
+    (MADCTL_MV | MADCTL_BGR),
+
+  0x3A, 1,   // Interface Pixel Format
+	0x66, 	 //18 bit
+
+  0xB0, 1,   // Interface Mode Control
+	0x80,     			 //SDO NOT USE
+
+  0xB1, 1,   //Frame rate
+	0xA0,    //60Hz
+
+  0xB4, 1,   //Display Inversion Control
+	0x02,    //2-dot
+
+  0xB6, 2,   //Display Function Control  RGB/MCU Interface Control
+	0x02,    //MCU
+	0x02,    //Source,Gate scan direction
+
+  0xE9, 1,   // Set Image Function
+	0x00,    // Disable 24 bit data
+
+  0xF7, 4,   // Adjust Control
+	0xA9,
+	0x51,
+	0x2C,
+	0x82,    // D7 stream, loose
+
+
+  0x11, DELAY,  //Exit Sleep
+    120,
+  0x29, 0,      //Display on
+
 };
 
 //----------------------------------------------------
@@ -133,7 +195,16 @@ static void ili_init(spi_nodma_device_handle_t spi)
 	ret = spi_nodma_device_select(spi, 0);
 	assert(ret==ESP_OK);
 
-    commandList(spi, ILI9341_init);
+    if (color_bits == 16) {
+        display_width = 320;
+        display_height =240;
+        commandList(spi, ILI9341_init);
+    }
+    else {
+        display_width = 480;
+        display_height =320;
+        commandList(spi, ILI9488_init);
+    }
 
 	ret = spi_nodma_device_deselect(spi);
 	assert(ret==ESP_OK);
@@ -249,11 +320,13 @@ static uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
 //--------------------------------------------------------------------------------------
 static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
-    uint32_t speeds[7] = {5000000,8000000,16000000,20000000,30000000,40000000,80000000};
-    int speed_idx = 0, max_speed=6, max_rdspeed=99;
+	int max_speed = 5;
+    uint32_t speeds[6] = {5000000,8000000,16000000,20000000,30000000,40000000};
+
+    int speed_idx = 0, max_rdspeed=99;
     uint32_t change_speed, rd_clk;
 	esp_err_t ret;
-    uint16_t line[2][320];
+    uint16_t line[2][display_width];
     int x, y, ry;
 	int line_check=0;
 	uint16_t color;
@@ -268,43 +341,43 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		color = 0x0000;
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
-		disp_spi_transfer_addrwin(spi, 0, 319, 0, 239);
+		disp_spi_transfer_addrwin(spi, 0, display_width-1, 0, display_height-1);
 		disp_spi_transfer_cmd(spi, TFT_RAMWR);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  320*240, 1);
+		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  display_width*display_height, 1);
 
 		color = 0xFFFF;
-		for (y=0;y<240;y+=20) {
-			disp_spi_transfer_addrwin(spi, 0, 319, y, y);
-			disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  320, 1);
+		for (y=0;y<display_height;y+=20) {
+			disp_spi_transfer_addrwin(spi, 0, display_width-1, y, y);
+			disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  display_width, 1);
 		}
-		for (x=0;x<320;x+=20) {
-			disp_spi_transfer_addrwin(spi, x, x, 0, 239);
-			disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  240, 1);
+		for (x=0;x<display_width;x+=20) {
+			disp_spi_transfer_addrwin(spi, x, x, 0, display_height-1);
+			disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  display_height, 1);
 		}
-		disp_spi_transfer_addrwin(spi, 0, 319, 239, 239);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  320, 1);
-		disp_spi_transfer_addrwin(spi, 319, 319, 0, 239);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  240, 1);
+		disp_spi_transfer_addrwin(spi, 0, display_width-1, display_height-1, display_height-1);
+		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  display_width, 1);
+		disp_spi_transfer_addrwin(spi, display_width-1, display_width-1, 0, display_height-1);
+		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  display_height, 1);
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
 		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 
 		// *** Send color lines
-		ry = rand() % 239;
+		ry = rand() % (display_height-1);
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
 		line_check=-9999;
-		for (y=0; y<240; y++) {
-			hue_inc = (float)(((float)y / 239.0) * 360.0);
-            for (x=0; x<320; x++) {
-				color = HSBtoRGB(hue_inc, 1.0, (float)(x/640.0) + 0.5);
+		for (y=0; y<display_height; y++) {
+			hue_inc = (float)(((float)y / (float)(display_height-1) * 360.0));
+            for (x=0; x<display_width; x++) {
+				color = HSBtoRGB(hue_inc, 1.0, (float)(x/(float)(display_width*2)) + 0.5);
 				line[0][x] = color; //(uint16_t)((color>>8) | (color & 0xFF));
 			}
-			disp_spi_transfer_addrwin(spi, 0, 319, y, y);
-			disp_spi_transfer_color_rep(spi, (uint8_t *)(line[0]),  320, 0);
-            if (y == ry) memcpy(line[1], line[0], 320*2);
+			disp_spi_transfer_addrwin(spi, 0, display_width-1, y, y);
+			disp_spi_transfer_color_rep(spi, (uint8_t *)(line[0]),  display_width, 0);
+            if (y == ry) memcpy(line[1], line[0], display_width*2);
 		}
 		t1 = clock() - tstart;
 		// Check line
@@ -318,9 +391,10 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		}
 		else rd_clk = speeds[speed_idx];
 
-		ret = disp_spi_read_data(spi, 0, ry, 319, ry, 320, (uint8_t *)(line[0]));
+#if DISPLAY_READ
+		ret = disp_spi_read_data(spi, 0, ry, display_width-1, ry, display_width, (uint8_t *)(line[0]));
 		if (ret == ESP_OK) {
-            line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), 320*2);
+            line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), display_width*2);
         }
 		if (speed_idx > max_rdspeed) {
 			// Restore spi speed
@@ -345,10 +419,13 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 				printf("### MAX SPI CLOCK = %d ###\r\n", speeds[max_speed]);
 				speed_idx = 0;
 				spi_nodma_set_speed(spi, speeds[speed_idx]);
-				ili_init(spi);
-				continue;
+				if (speed_idx) {
+					ili_init(spi);
+					continue;
+				}
 			}
         }
+#endif
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
 		// *** Display pixels
@@ -357,8 +434,8 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
-		for (y=0; y<240; y++) {
-			for (x=0; x<320; x++) {
+		for (y=0; y<display_height; y++) {
+			for (x=0; x<display_width; x++) {
 				disp_spi_set_pixel(spi, x, y, color);
 			}
 			if ((y > 0) && ((y % 40) == 0)) {
@@ -383,9 +460,9 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
-		disp_spi_transfer_addrwin(spi, 0, 319, 0, 239);
+		disp_spi_transfer_addrwin(spi, 0, display_width-1, 0, display_height-1);
 		disp_spi_transfer_cmd(spi, TFT_RAMWR);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  320*240, 1);
+		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  display_width*display_height, 1);
 		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 		t3 = clock() - tstart;
@@ -408,7 +485,8 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		// *** Print info
 		printf("-------------\r\n");
 		printf(" Disp clock = %5.2f MHz (requested: %5.2f)\r\n", (float)((float)(spi_nodma_get_speed(spi))/1000000.0), (float)(speeds[speed_idx])/1000000.0);
-		printf("      Lines = %5d  ms (240 lines of 320 pixels)\r\n",t1);
+		printf("      Lines = %5d  ms (%d lines of %d pixels)\r\n",t1,display_height,display_width);
+#if DISPLAY_READ
 		printf(" Read check   ");
 		if (line_check == 0) printf("   OK, line %d", ry);
 		else printf("  Err, line %d", ry);
@@ -416,8 +494,9 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 			printf(" (Read clock = %5.2f MHz)", (float)(rd_clk/1000000.0));
 		}
 		printf("\r\n");
-		printf("     Pixels = %5d  ms (320x240)\r\n",t2);
-		printf("        Cls = %5d  ms (320x240)\r\n",t3);
+#endif
+		printf("     Pixels = %5d  ms (%dx%d)\r\n",t2,display_width,display_height);
+		printf("        Cls = %5d  ms (%dx%d)\r\n",t3,display_width,display_height);
 #ifdef USE_TOUCH
 		if (tz > 100) {
 			printf(" Touched at (%d,%d) [row TS values]\r\n",tx,ty);
@@ -438,6 +517,9 @@ void app_main()
 {
     esp_err_t ret;
 	
+    gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
+
     spi_nodma_device_handle_t spi;
     spi_nodma_device_handle_t tsspi = NULL;
 	
@@ -453,7 +535,7 @@ void app_main()
         .mode=0,                                //SPI mode 0
         .spics_io_num=-1,                       //we will use external CS pin
 		.spics_ext_io_num=PIN_NUM_CS,           //external CS pin
-		//.flags=SPI_DEVICE_HALFDUPLEX,           //Set half duplex mode (Full duplex mode can also be set by commenting this line
+		.flags=SPI_DEVICE_HALFDUPLEX,           //Set half duplex mode (Full duplex mode can also be set by commenting this line
 												// but we don't need full duplex in  this example
 		// We can use pre_cb callback to activate DC, but we are handling DC in low-level functions, so it is not necessary
         //.pre_cb=ili_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line

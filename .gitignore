@@ -19,6 +19,7 @@ GPATH
 
 build/
 temp/
+local/
 *.dis
 *.elf
 *.map

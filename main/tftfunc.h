@@ -141,6 +141,7 @@
 #define MADCTL_BGR 0x08
 #define MADCTL_MH  0x04
 
+uint8_t color_bits;
 
 void disp_spi_transfer_start(spi_nodma_device_handle_t handle, int bits);
 void disp_spi_transfer_cmd(spi_nodma_device_handle_t handle, int8_t cmd);

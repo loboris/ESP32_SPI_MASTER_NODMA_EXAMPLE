@@ -52,7 +52,7 @@ In that case replace **#include "spi_master_nodma.h"** with **#include "driver/s
 
 #### Example
 
-To run the example, attach ILI9341 based display module to ESP32. Default pins used are:
+To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Default pins used are:
 * mosi: 23
 * miso: 19
 *  sck: 18
@@ -62,6 +62,12 @@ To run the example, attach ILI9341 based display module to ESP32. Default pins u
 
 ---
 
+**If you have ILI9488, set** `uint8_t color_bits = 24` in *tftfunc.c*
+
+**If you have ILI9341, set** `uint8_t color_bits = 16` in *tftfunc.c*
+
+**If you want to test read function, set** `#define DISPLAY_READ 1` in *spi_master_demo.c* (**currently not working for ILI9488**)
+
 **If you want to use different pins, change them in** *tftfunc.h*
 
 **if you dont have the touch screen, comment** *#define USE_TOUCH* in *spi_master_demo.c*
@@ -70,9 +76,9 @@ Using *make menuconfig* **select tick rate 1000** ( → Component config → Fre
 
 ---
 
-This code tests accessing ILI9341 based display using **spi_master_nodma** driver and prints some timings.
+This code tests accessing ILI9341 or ILI9488 based display using **spi_master_nodma** driver and prints some timings.
 
-Some fancy graphics is displayed on the ILI9341-based 320x240 LCD, lines, pixels and color bars.
+Some fancy graphics is displayed on the ILI9341-based 320x240 LCD (or ILI9488-based 480x320 LCD), lines, pixels and color bars.
 
 Sending individual pixels is more than 10 times faster with this driver than when using *spi_master*
  
