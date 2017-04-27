@@ -89,7 +89,10 @@ If Touch screen is available, reading the touch coordinates (non calibrated) is 
 ---
 
 **TFT library with many drawing functions and fonts is now included.**
+
 The example shows some drawing and text/fonts capabilities.
+
+![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo.jpg)
 
 ---
 
