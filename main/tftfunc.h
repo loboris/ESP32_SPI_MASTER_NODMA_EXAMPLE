@@ -29,8 +29,8 @@
 #define ST7735_HEIGHT 160
 #define ILI9341_WIDTH  240
 #define ILI9341_HEIGHT 320
-#define XADOW_WIDTH  240
-#define XADOW_HEIGHT 240
+#define ILI9488_WIDTH  320
+#define ILI9488_HEIGHT 480
 
 #define INITR_GREENTAB 0x0
 #define INITR_REDTAB   0x1
@@ -141,7 +141,60 @@
 #define MADCTL_BGR 0x08
 #define MADCTL_MH  0x04
 
+
+// Color definitions
+#define TFT_BLACK       0x0000      /*   0,   0,   0 */
+#define TFT_NAVY        0x000F      /*   0,   0, 128 */
+#define TFT_DARKGREEN   0x03E0      /*   0, 128,   0 */
+#define TFT_DARKCYAN    0x03EF      /*   0, 128, 128 */
+#define TFT_MAROON      0x7800      /* 128,   0,   0 */
+#define TFT_PURPLE      0x780F      /* 128,   0, 128 */
+#define TFT_OLIVE       0x7BE0      /* 128, 128,   0 */
+#define TFT_LIGHTGREY   0xC618      /* 192, 192, 192 */
+#define TFT_DARKGREY    0x7BEF      /* 128, 128, 128 */
+#define TFT_BLUE        0x001F      /*   0,   0, 255 */
+#define TFT_GREEN       0x07E0      /*   0, 255,   0 */
+#define TFT_CYAN        0x07FF      /*   0, 255, 255 */
+#define TFT_RED         0xF800      /* 255,   0,   0 */
+#define TFT_MAGENTA     0xF81F      /* 255,   0, 255 */
+#define TFT_YELLOW      0xFFE0      /* 255, 255,   0 */
+#define TFT_WHITE       0xFFFF      /* 255, 255, 255 */
+#define TFT_ORANGE      0xFD20      /* 255, 165,   0 */
+#define TFT_GREENYELLOW 0xAFE5      /* 173, 255,  47 */
+#define TFT_PINK        0xF81F
+
+#define INVERT_ON		1
+#define INVERT_OFF		0
+
+#define PORTRAIT	0
+#define LANDSCAPE	1
+#define PORTRAIT_FLIP	2
+#define LANDSCAPE_FLIP	3
+
+#define LASTX	-1
+#define LASTY	-2
+#define CENTER	-3
+#define RIGHT	-4
+#define BOTTOM	-4
+
+#define DEFAULT_FONT	0
+#define DEJAVU18_FONT	1
+#define DEJAVU24_FONT	2
+#define UBUNTU16_FONT	3
+#define COMIC24_FONT	4
+#define MINYA24_FONT	5
+#define TOONEY32_FONT	6
+#define FONT_7SEG		7
+#define USER_FONT		8
+
+
+spi_nodma_device_handle_t disp_spi;
+spi_nodma_device_handle_t ts_spi;
+
 uint8_t color_bits;
+uint16_t *tft_line;
+uint16_t _width;
+uint16_t _height;
 
 void disp_spi_transfer_start(spi_nodma_device_handle_t handle, int bits);
 void disp_spi_transfer_cmd(spi_nodma_device_handle_t handle, int8_t cmd);
@@ -151,5 +204,13 @@ void disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, uint16_t y
 void disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uint8_t *color, uint32_t len, uint8_t rep);
 void disp_spi_transfer_cmd_data(spi_nodma_device_handle_t handle, int8_t cmd, uint8_t *data, uint32_t len);
 int disp_spi_read_data(spi_nodma_device_handle_t handle, int x1, int y1, int x2, int y2, int len, uint8_t *buf);
+
+void send_data(int x1, int y1, int x2, int y2, uint32_t len, uint16_t *buf);
+void drawPixel(int16_t x, int16_t y, uint16_t color, uint8_t sel);
+void TFT_pushColorRep(int x1, int y1, int x2, int y2, uint16_t data, uint32_t len);
+int read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf);
+uint16_t readPixel(int16_t x, int16_t y);
+
+uint16_t touch_get_data(uint8_t type);
 
 #endif
