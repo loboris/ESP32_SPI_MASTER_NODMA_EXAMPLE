@@ -231,6 +231,7 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
             if (color_bits == 16) {
                 wd |= (uint32_t)color[1];
                 wd |= (uint32_t)color[0] << 8;
+                wbits += 16;
             }
 		}
 		else {
@@ -240,19 +241,13 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
                 wd |= (uint32_t)color[(count<<1)+1] << 8;
                 wbits += 16;
             }
-            else clr = (uint16_t)color[(count<<1)] | ((uint16_t)color[(count<<1)+1] << 8);
 		}
         if (color_bits == 24) {
             if (rep == 0) {
+                clr = (uint16_t)color[(count<<1)+1] | ((uint16_t)color[(count<<1)] << 8);
                 red = (((clr & 0xF800) >> 11) * 255) / 31;
                 green = (((clr & 0x07E0) >> 5) * 255) / 63;
                 blue = ((clr & 0x001F) * 255) / 31;
-            }
-            if (wbits == 32) {
-                handle->host->hw->data_buf[idx] = wd;
-                wd = 0;
-                wbits = 0;
-                idx++;
             }
             wd |= (uint32_t)(red) << wbits;
             wbits += 8;
@@ -264,14 +259,20 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
             }
             wd |= (uint32_t)(green) << wbits;
             wbits += 8;
-            wd |= (uint32_t)(blue) << wbits;
             if (wbits == 32) {
                 handle->host->hw->data_buf[idx] = wd;
                 wd = 0;
                 wbits = 0;
                 idx++;
             }
+            wd |= (uint32_t)(blue) << wbits;
             wbits += 8;
+            if (wbits == 32) {
+                handle->host->hw->data_buf[idx] = wd;
+                wd = 0;
+                wbits = 0;
+                idx++;
+            }
         }
         else {
             if (wbits == 32) {
