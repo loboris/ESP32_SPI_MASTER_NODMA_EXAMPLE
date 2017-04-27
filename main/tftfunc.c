@@ -203,6 +203,14 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
 	// Set DC to 1 (data mode);
 	gpio_set_level(PIN_NUM_DC, 1);
 
+    if ((rep) && (color_bits == 24)) {
+        // prepare color data for ILI9844 in repeat color mode
+        clr = (uint16_t)color[0] | ((uint16_t)color[1] << 8);
+        red = (((clr & 0xF800) >> 11) * 255) / 31;
+        green = (((clr & 0x07E0) >> 5) * 255) / 63;
+        blue = ((clr & 0x001F) * 255) / 31;
+    }
+
 	while (count < len) {
         // ** Check if we have enough bits in spi buffer for the next color
     	if ((bits + color_bits) > 512) {
@@ -224,7 +232,6 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
                 wd |= (uint32_t)color[1];
                 wd |= (uint32_t)color[0] << 8;
             }
-            else clr = (uint16_t)color[0] | ((uint16_t)color[1] << 8);
 		}
 		else {
 			// get color data from buffer
@@ -236,9 +243,11 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
             else clr = (uint16_t)color[(count<<1)] | ((uint16_t)color[(count<<1)+1] << 8);
 		}
         if (color_bits == 24) {
-        	red = (((clr & 0xF800) >> 11) * 255) / 31;
-            green = (((clr & 0x07E0) >> 5) * 255) / 63;
-            blue = ((clr & 0x001F) * 255) / 31;
+            if (rep == 0) {
+                red = (((clr & 0xF800) >> 11) * 255) / 31;
+                green = (((clr & 0x07E0) >> 5) * 255) / 63;
+                blue = ((clr & 0x001F) * 255) / 31;
+            }
             if (wbits == 32) {
                 handle->host->hw->data_buf[idx] = wd;
                 wd = 0;

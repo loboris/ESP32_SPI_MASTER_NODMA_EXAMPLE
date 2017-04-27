@@ -70,7 +70,7 @@ To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Def
 
 **If you want to use different pins, change them in** *tftfunc.h*
 
-**if you dont have the touch screen, comment** *#define USE_TOUCH* in *spi_master_demo.c*
+**if you dont have the touch screen, comment** `#define USE_TOUCH` in *spi_master_demo.c*
 
 Using *make menuconfig* **select tick rate 1000** ( → Component config → FreeRTOS → Tick rate (Hz) ) to get more accurate timings
 
