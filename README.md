@@ -76,7 +76,7 @@ Using *make menuconfig* **select tick rate 1000** ( → Component config → Fre
 
 *  This example tests accessing ILI9341 or ILI9488 based display using **spi_master_nodma** driver
 *  Basics functions are executed first and timings at several spi clock speeds are printed.
-*  For different JPG images are shown on screen to demonstrate jpeg decoding
+*  Four different JPG images are shown on screen to demonstrate jpeg decoding
 *  Text and graphics are drawn on screen to demonstrate some drawing functions and text/fonts functionality
 
 Sending individual pixels is more than 10 times faster with this driver than when using *spi_master*
