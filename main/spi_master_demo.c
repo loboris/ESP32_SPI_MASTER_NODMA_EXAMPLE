@@ -508,6 +508,13 @@ void disp_images() {
 	tft_jpg_image(0, 0, 1, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
 	vTaskDelay(2000 / portTICK_RATE_MS);
 	tft_jpg_image(0, 0, 1, NULL, test4_jpg_start, test4_jpg_end-test4_jpg_start);
+
+	_fg = TFT_BLACK;
+	TFT_setFont(TOONEY32_FONT, NULL);
+	_transparent = 1;
+	TFT_print("JPG IMAGES", 150, _height-40);
+	TFT_print("JPG IMAGES", 151, _height-39);
+	_transparent = 0;
 	vTaskDelay(5000 / portTICK_RATE_MS);
 }
 
@@ -521,6 +528,19 @@ void disp_frame() {
 
 //----------------
 void disp_text() {
+	_fg = random_at_most(65565);
+	TFT_setFont(DEFAULT_FONT, NULL);
+	TFT_print("Hi from ESP32 spi_master_nodma driver", 70, 6);
+
+	_fg = random_at_most(65565);
+	TFT_setFont(DEFAULT_FONT, NULL);
+	rotation = 270;
+	TFT_print("Rotated text 270 deg", 6, _height-70);
+	rotation = 90;
+	_fg = random_at_most(65565);
+	TFT_print("Rotated text 90 deg", _width-12, 80);
+	rotation = 0;
+
 	_fg = random_at_most(65565);
 	TFT_setFont(COMIC24_FONT, NULL);
 	TFT_print("ESP32 ", CENTER, 100);

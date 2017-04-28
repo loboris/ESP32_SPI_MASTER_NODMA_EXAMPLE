@@ -96,7 +96,7 @@ extern uint8_t tft_tooney32[];
 //static uint8_t *userfont = NULL;
 
 uint8_t orientation = PORTRAIT;	// screen orientation
-uint8_t rotation = 0;			// font rotation
+uint16_t rotation = 0;			// font rotation
 uint8_t	_transparent = 0;
 uint16_t	_fg = TFT_GREEN;
 uint16_t _bg = TFT_BLACK;
@@ -1438,6 +1438,7 @@ void TFT_print(char *st, int x, int y) {
       }
     }
   }
+  TFT_OFFSET = 0;
 }
 
 

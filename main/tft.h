@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 uint8_t		orientation;
-uint8_t		rotation;
+uint16_t		rotation;
 uint8_t		_transparent;
 uint16_t	_fg;
 uint16_t	_bg;
