@@ -24,7 +24,7 @@ void TFT_drawRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r,
 void TFT_fillRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r, uint16_t color);
 void TFT_drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
 void TFT_drawTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
-static void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
+void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
 void TFT_drawCircle(int16_t x, int16_t y, int radius, uint16_t color);
 void TFT_fillCircle(int16_t x, int16_t y, int radius, uint16_t color);
 void TFT_draw_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry, uint16_t color, uint8_t option);
@@ -42,6 +42,8 @@ void TFT_setRotation(uint8_t m);
 void TFT_invertDisplay(const uint8_t mode);
 
 uint16_t HSBtoRGB(float _hue, float _sat, float _brightness);
+
+void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int size);
 
 int tp_get_data(uint8_t type, int samples);
 

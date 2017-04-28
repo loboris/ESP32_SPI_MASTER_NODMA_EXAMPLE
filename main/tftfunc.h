@@ -9,29 +9,58 @@
 
 #include "spi_master_nodma.h"
 
-// Define ESP32 SPI pins to which the display is attached
+// ########################################################
+// ### SET YOUR DISPLAY TYPE TO 1; THE OTHER ONE TO 0 ! ###
+// ########################################################
+#define DISP_TYPE_ILI9341	0
+#define DISP_TYPE_ILI9488	1
+// ########################################################
+
+
+// ##############################################################
+// ### Define ESP32 SPI pins to which the display is attached ###
+// ##############################################################
 #define PIN_NUM_MISO 19
 #define PIN_NUM_MOSI 23
 #define PIN_NUM_CLK  18
 #define PIN_NUM_CS   5
+// Display command/data pin
+#define PIN_NUM_DC   26
+// Touch screen CS pin
+#define PIN_NUM_TCS  25
 // Reset and backlit pins are not used
 //#define PIN_NUM_RST  18
 //#define PIN_NUM_BCKL 5
+// ##############################################################
 
-// Display command/data pin
-#define PIN_NUM_DC   26
+// #######################################################
+// Set this to 1 if you want to use touch screen functions
+// #######################################################
+#define USE_TOUCH	0
+// #######################################################
 
-// Touch screen CS pin
-#define PIN_NUM_TCS  25
+
+#if DISP_TYPE_ILI9488
+#define COLOR_BITS			24
+#else
+#define COLOR_BITS			16
+#endif
+
+#define TFT_MAX_DISP_SIZE		480					// maximum display dimension in pixel
+#define TFT_LINEBUF_MAX_SIZE	TFT_MAX_DISP_SIZE	// line buffer maximum size in words (uint16_t)
 
 // Display constants
 #define ST7735_WIDTH  128
 #define ST7735_HEIGHT 160
 #define ILI9341_WIDTH  240
 #define ILI9341_HEIGHT 320
+#if (COLOR_BITS == 24)
 #define ILI9488_WIDTH  320
 #define ILI9488_HEIGHT 480
-
+#else
+#define ILI9488_WIDTH  320
+#define ILI9488_HEIGHT 480
+#endif
 #define INITR_GREENTAB 0x0
 #define INITR_REDTAB   0x1
 #define INITR_BLACKTAB 0x2
@@ -191,7 +220,6 @@
 spi_nodma_device_handle_t disp_spi;
 spi_nodma_device_handle_t ts_spi;
 
-uint8_t color_bits;
 uint16_t *tft_line;
 uint16_t _width;
 uint16_t _height;

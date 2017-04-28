@@ -16,6 +16,25 @@
 #include "driver/gpio.h"
 #include "tftfunc.h"
 #include "tft.h"
+#include "esp_vfs.h"
+#include "esp_vfs_fat.h"
+#include "esp_system.h"
+
+
+extern uint8_t test1_jpg_start[] asm("_binary_test1_jpg_start");
+extern uint8_t test1_jpg_end[] asm("_binary_test1_jpg_end");
+extern uint8_t test2_jpg_start[] asm("_binary_test2_jpg_start");
+extern uint8_t test2_jpg_end[] asm("_binary_test2_jpg_end");
+extern uint8_t test3_jpg_start[] asm("_binary_test3_jpg_start");
+extern uint8_t test3_jpg_end[] asm("_binary_test3_jpg_end");
+extern uint8_t test4_jpg_start[] asm("_binary_test4_jpg_start");
+extern uint8_t test4_jpg_end[] asm("_binary_test4_jpg_end");
+
+// Handle of the wear levelling library instance
+static wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
+
+// Mount path for the partition
+const char *base_path = "/spiflash";
 
 
 /*
@@ -28,17 +47,13 @@
  If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated.
 */
 
-// comment this if your display does not have touch screen
-//#define USE_TOUCH
 
-#define DISPLAY_READ 0
+#define DISPLAY_READ 1
 
 // define which spi bus to use VSPI_HOST or HSPI_HOST
 #define SPI_BUS VSPI_HOST
 
 #define DELAY 0x80
-
-#define DISPLAY_TYPE    1
 
 // We can use pre_cb callback to activate DC, but we are handling DC in low-level functions, so it is not necessary
 
@@ -111,11 +126,15 @@ static const uint8_t ILI9488_init[] = {
   TFT_MADCTL, 1,									// Memory Access Control (orientation)
     (MADCTL_MV | MADCTL_BGR),
 
-  0x3A, 1,   // Interface Pixel Format
-	0x66, 	 //18 bit
+  // *** INTERFACE PIXEL FORMAT: 0x66 -> 18 bit; 0x55 -> 16 bit; 0x11 -> 1 bit
+#if (COLOR_BITS ==24)
+  ILI9341_PIXFMT, 1, 0x66,
+#else
+  ILI9341_PIXFMT, 1, 0x55,
+#endif
 
   0xB0, 1,   // Interface Mode Control
-	0x80,     			 //SDO NOT USE
+	0x00,    // 0x80: SDO NOT USE; 0x00 USE SDO
 
   0xB1, 1,   //Frame rate
 	0xA0,    //60Hz
@@ -188,29 +207,32 @@ static void ili_init(spi_nodma_device_handle_t spi)
     vTaskDelay(100 / portTICK_RATE_MS);
 	*/
 
-	//Send all the commands
+    //Send all the commands
+#if DISP_TYPE_ILI9341
+    _width = ILI9341_HEIGHT;
+    _height =ILI9341_WIDTH;
 	ret = spi_nodma_device_select(spi, 0);
 	assert(ret==ESP_OK);
+    commandList(spi, ILI9341_init);
+#elif DISP_TYPE_ILI9488
+    _width  = ILI9488_HEIGHT;
+    _height = ILI9488_WIDTH;
+	ret = spi_nodma_device_select(spi, 0);
+	assert(ret==ESP_OK);
+    commandList(spi, ILI9488_init);
+#else
+    	assert(0);
+#endif
 
-    if (color_bits == 16) {
-        _width = 320;
-        _height =240;
-        commandList(spi, ILI9341_init);
-    }
-    else {
-        _width = 480;
-        _height =320;
-        commandList(spi, ILI9488_init);
-    }
-
-	ret = spi_nodma_device_deselect(spi);
+    ret = spi_nodma_device_deselect(spi);
 	assert(ret==ESP_OK);
 
     ///Enable backlight
     //gpio_set_level(PIN_NUM_BCKL, 0);
 }
 
-#ifdef USE_TOUCH
+
+#if USE_TOUCH
 //Send a command to the Touch screen
 //---------------------------------------------------------------
 uint16_t ts_cmd(spi_nodma_device_handle_t spi, const uint8_t cmd) 
@@ -238,10 +260,10 @@ uint16_t ts_cmd(spi_nodma_device_handle_t spi, const uint8_t cmd)
 //--------------------------------------------------------------------------------------
 static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
-	int max_speed = 5;
-    uint32_t speeds[6] = {6000000,8000000,16000000,20000000,24000000,40000000};
+	int max_speed = 2;
+    uint32_t speeds[3] = {8000000,16000000, 40000000};
 
-    int speed_idx = 0, max_rdspeed=99;
+    int speed_idx = 0, max_rdspeed=8000000;
     uint32_t change_speed, rd_clk;
 	esp_err_t ret;
     uint16_t line[2][_width];
@@ -250,12 +272,16 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 	uint16_t color;
     uint32_t t1=0,t2=0,t3=0, tstart;
 	float hue_inc;
-#ifdef USE_TOUCH
+#if USE_TOUCH
 	int tx, ty, tz=0;
 #endif
 
+	ry = rand() % (_height-1);
+	ry = rand() % (_height-1);
+	ry = rand() % (_height-1);
+
 	while(1) {
-		// *** Clear screen
+		// ===== Clear screen =====
 		color = 0x0000;
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
@@ -281,12 +307,12 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
 
-		// *** Send color lines
+		// ===== Send color lines =====
 		ry = rand() % (_height-1);
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
-		line_check=-9999;
+		line_check=0;
 		for (y=0; y<_height; y++) {
 			hue_inc = (float)(((float)y / (float)(_height-1) * 360.0));
             for (x=0; x<_width; x++) {
@@ -295,10 +321,14 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 			}
 			disp_spi_transfer_addrwin(spi, 0, _width-1, y, y);
 			disp_spi_transfer_color_rep(spi, (uint8_t *)(line[0]),  _width, 0);
+#if DISPLAY_READ
             if (y == ry) memcpy(line[1], line[0], _width*2);
+#endif
 		}
 		t1 = clock() - tstart;
-		// Check line
+
+#if DISPLAY_READ
+		// == Check line ==
 		if (speed_idx > max_rdspeed) {
 			// Set speed to max read speed
 			change_speed = spi_nodma_set_speed(spi, speeds[max_rdspeed]);
@@ -308,11 +338,15 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 			rd_clk = speeds[max_rdspeed];
 		}
 		else rd_clk = speeds[speed_idx];
-
-#if DISPLAY_READ
 		ret = disp_spi_read_data(spi, 0, ry, _width-1, ry, _width, (uint8_t *)(line[0]));
 		if (ret == ESP_OK) {
-            line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), _width*2);
+            //line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), _width*2);
+			for (y=0; y<_width; y++) {
+				if (line[0][y] != line[1][y]) {
+					line_check = y+1;
+					break;
+				}
+			}
         }
 		if (speed_idx > max_rdspeed) {
 			// Restore spi speed
@@ -346,7 +380,7 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 #endif
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
-		// *** Display pixels
+		// ===== Display pixels =====
 		uint8_t clidx = 0;
 		color = 0xF800;
 		tstart = clock();
@@ -373,20 +407,20 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		t2 = clock() - tstart;
 		vTaskDelay(1000 / portTICK_RATE_MS);
 		
-		// *** Clear screen
-		color = 0xFFE0;
+		// ===== Clear screen with color =====
+		color = TFT_BLUE;
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
 		disp_spi_transfer_addrwin(spi, 0, _width-1, 0, _height-1);
 		disp_spi_transfer_cmd(spi, TFT_RAMWR);
 		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _width*_height, 1);
+		t3 = clock() - tstart;
 		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
-		t3 = clock() - tstart;
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
-#ifdef USE_TOUCH
+#if USE_TOUCH
 		// Get toush status
 		//ret = spi_nodma_device_deselect(tsspi);
 		//assert(ret==ESP_OK);
@@ -407,7 +441,7 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 #if DISPLAY_READ
 		printf(" Read check   ");
 		if (line_check == 0) printf("   OK, line %d", ry);
-		else printf("  Err, line %d", ry);
+		else printf("  Err, on line %d at %d", ry, line_check);
 		if (speed_idx > max_rdspeed) {
 			printf(" (Read clock = %5.2f MHz)", (float)(rd_clk/1000000.0));
 		}
@@ -415,7 +449,7 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 #endif
 		printf("     Pixels = %5d  ms (%dx%d)\r\n",t2,_width,_height);
 		printf("        Cls = %5d  ms (%dx%d)\r\n",t3,_width,_height);
-#ifdef USE_TOUCH
+#if USE_TOUCH
 		if (tz > 100) {
 			printf(" Touched at (%d,%d) [row TS values]\r\n",tx,ty);
 		}
@@ -450,7 +484,58 @@ long random_at_most(long max) {
   while (num_rand - defect <= (unsigned long)x);
 
   // Truncated division is intentional
-  return x/bin_size;
+  x /= bin_size;
+  if (x == 0) x = (0x18 | 0x06 | 0x03);
+  return x;
+}
+
+//------------------
+void disp_images() {
+	TFT_fillScreen(TFT_BLACK);
+	tft_jpg_image(1, 0, 1, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
+	vTaskDelay(500 / portTICK_RATE_MS);
+	tft_jpg_image(_width/2, 0, 1, NULL, test2_jpg_start, test2_jpg_end-test2_jpg_start);
+	vTaskDelay(500 / portTICK_RATE_MS);
+	tft_jpg_image(1, _height/2, 1, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
+	vTaskDelay(500 / portTICK_RATE_MS);
+	tft_jpg_image(_width/2, _height/2, 1, NULL, test4_jpg_start, test4_jpg_end-test4_jpg_start);
+	vTaskDelay(5000 / portTICK_RATE_MS);
+
+	tft_jpg_image(0, 0, 1, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
+	vTaskDelay(2000 / portTICK_RATE_MS);
+	tft_jpg_image(0, 0, 1, NULL, test2_jpg_start, test2_jpg_end-test2_jpg_start);
+	vTaskDelay(2000 / portTICK_RATE_MS);
+	tft_jpg_image(0, 0, 1, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
+	vTaskDelay(2000 / portTICK_RATE_MS);
+	tft_jpg_image(0, 0, 1, NULL, test4_jpg_start, test4_jpg_end-test4_jpg_start);
+	vTaskDelay(5000 / portTICK_RATE_MS);
+}
+
+//-----------------
+void disp_frame() {
+	TFT_fillScreen(TFT_BLACK);
+
+	TFT_drawRect(0, 0, _width-1, _height-1, TFT_YELLOW);
+	TFT_drawRect(2, 2, _width-5, _height-5, TFT_BLUE);
+}
+
+//----------------
+void disp_text() {
+	_fg = random_at_most(65565);
+	TFT_setFont(COMIC24_FONT, NULL);
+	TFT_print("ESP32 ", CENTER, 100);
+
+	_fg = random_at_most(65565);
+	TFT_setFont(DEJAVU18_FONT, NULL);
+	TFT_print("2.4 GHz Wi-Fi and Bluetooth combo chip", CENTER, 130);
+
+	TFT_setFont(TOONEY32_FONT, NULL);
+	_fg = random_at_most(65565);
+	TFT_print("Welcome to ESP32", CENTER, CENTER);
+
+	TFT_setFont(FONT_7SEG, NULL);
+	_fg = TFT_BLUE;
+	set_font_atrib(14, 3, 1, 0x0010);
 }
 
 //===============
@@ -462,28 +547,7 @@ void tft_test() {
 	_forceFixed = 0;
 	tft_resetclipwin();
 
-	TFT_fillScreen(TFT_BLACK);
-
-	TFT_fillRect(0, 0, _width-1, _height-1, TFT_BLACK);
-	TFT_drawRect(0, 0, _width-1, _height-1, TFT_YELLOW);
-
-	_fg = TFT_RED;
-	TFT_setFont(COMIC24_FONT, NULL);
-	TFT_print("ESP32 ", CENTER, 100);
-
-	_fg = TFT_CYAN;
-	TFT_setFont(DEJAVU18_FONT, NULL);
-	TFT_print("2.4 GHz Wi-Fi and Bluetooth combo chip", CENTER, 126);
-
-	TFT_setFont(TOONEY32_FONT, NULL);
-	_fg = TFT_ORANGE;
-	TFT_print("Welcome to ESP32", CENTER, CENTER);
-
-	TFT_setFont(FONT_7SEG, NULL);
-	_fg = TFT_BLUE;
-	set_font_atrib(14, 3, 1, 0x0010);
 	uint16_t color=0, fill=0;
-
 	struct tm* tm_info;
     char buffer[16];
 	time_t now;
@@ -491,18 +555,42 @@ void tft_test() {
 	time(&now);
 	tm_info = localtime(&now);
 	int nsec = -1;
+	uint64_t nn = 0;
+	uint8_t xdir = 0;
+
 	while (1) {
 		time(&now);
 		tm_info = localtime(&now);
 
+		if ((clock() * portTICK_RATE_MS) > nn ) {
+			nn = (clock() * portTICK_RATE_MS) + 90000;
+			disp_images();
+			disp_frame();
+			disp_text();
+		}
+
 		if ((rpos % 50) == 0) color = random_at_most(65565);
 		TFT_fillRect(rpos, 34, 16, 16, TFT_BLACK);
-		rpos++;
-		if (rpos > 364) rpos = 100;
+		if (xdir == 0) {
+			rpos++;
+			if (rpos > 364) {
+				rpos -= 2;
+				xdir = 1;
+			}
+		}
+		else {
+			rpos--;
+			if (rpos < 100) {
+				rpos += 2;
+				xdir = 0;
+			}
+		}
 		TFT_fillRect(rpos, 34, 16, 16, color);
 
 		if (tm_info->tm_sec != nsec) {
 			nsec = tm_info->tm_sec;
+			disp_text();
+
 			color = random_at_most(65565);
 			fill = random_at_most(65565);
 			TFT_fillCircle(50,50,30, fill);
@@ -531,13 +619,77 @@ void tft_test() {
 	}
 }
 
+/*
+//---------------------------
+static esp_err_t initfs(void)
+{
+	const char *TAG = "SPI_FS";
+
+	ESP_LOGI(TAG, "Mounting FAT filesystem");
+    // To mount device we need name of device partition, define base_path
+    // and allow format partition in case if it is new one and was not formated before
+    const esp_vfs_fat_mount_config_t mount_config = {
+            .max_files = 4,
+            .format_if_mount_failed = true
+    };
+    esp_err_t err = esp_vfs_fat_spiflash_mount(base_path, "storage", &mount_config, &s_wl_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to mount FATFS (0x%x)", err);
+        return 1;
+    }
+
+	struct stat sb;
+	if ((stat("tiger240.jpg", &sb) == 0) && (sb.st_size > 0)) {
+		return ESP_OK;
+	}
+
+	ESP_LOGI(TAG, "Saving jpg file");
+    FILE *f = fopen("/spiflash/tiger240.jpg", "wb");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return 2;
+    }
+
+    int idx = 0;
+    int len = 0;
+    int size = test1_jpg_end-test1_jpg_start;
+    while (idx < size) {
+    	len = 1024;
+    	if ((idx + 1024) > size) len = size - idx;
+    	else len = 1024;
+    	int wrlen = fwrite(test1_jpg_start + idx, 1, len, f);
+    	if (wrlen != len) {
+    		fclose(f);
+            ESP_LOGE(TAG, "Error writing to file");
+    		return 3;
+    	}
+    	idx += wrlen;
+    }
+
+    fclose(f);
+    ESP_LOGI(TAG, "File written");
+    return ESP_OK;
+
+    // Unmount FATFS
+    //ESP_LOGI(TAG, "Unmounting FAT filesystem");
+    //ESP_ERROR_CHECK( esp_vfs_fat_spiflash_unmount(base_path, s_wl_handle));
+
+    //ESP_LOGI(TAG, "Done");
+}
+*/
 
 //-------------
 void app_main()
 {
     esp_err_t ret;
-	
-    gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
+
+    /*
+	ret = initfs();
+    assert(ret==ESP_OK);
+    */
+	tft_line = malloc(TFT_LINEBUF_MAX_SIZE*2);
+
+	gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
 
     spi_nodma_device_handle_t spi;
@@ -551,7 +703,7 @@ void app_main()
         .quadhd_io_num=-1
     };
     spi_nodma_device_interface_config_t devcfg={
-        .clock_speed_hz=6000000,                //Initial clock out at 6 MHz
+        .clock_speed_hz=8000000,                //Initial clock out at 8 MHz
         .mode=0,                                //SPI mode 0
         .spics_io_num=-1,                       //we will use external CS pin
 		.spics_ext_io_num=PIN_NUM_CS,           //external CS pin
@@ -561,7 +713,7 @@ void app_main()
         //.pre_cb=ili_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
     };
 
-#ifdef USE_TOUCH
+#if USE_TOUCH
 	spi_nodma_device_interface_config_t tsdevcfg={
         .clock_speed_hz=2500000,                //Clock out at 2.5 MHz
         .mode=0,                                //SPI mode 2
@@ -590,7 +742,7 @@ void app_main()
 	printf("SPI: attached display device, speed=%u\r\n", spi_nodma_get_speed(spi));
 	printf("SPI: bus uses native pins: %s\r\n", spi_nodma_uses_native_pins(spi) ? "true" : "false");
 
-#ifdef USE_TOUCH
+#if USE_TOUCH
     //Attach the touch screen to the same SPI bus
     ret=spi_nodma_bus_add_device(SPI_BUS, &buscfg, &tsdevcfg, &tsspi);
     assert(ret==ESP_OK);
@@ -613,9 +765,10 @@ void app_main()
 	printf("OK\r\n");
 	vTaskDelay(500 / portTICK_RATE_MS);
 	
-	//display_test(spi, tsspi);
+	display_test(spi, tsspi);
 
 	spi_nodma_set_speed(spi, 40000000);
 
+	printf("\r\nGraphics demo started\r\n");
 	tft_test();
 }

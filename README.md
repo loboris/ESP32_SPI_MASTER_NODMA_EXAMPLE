@@ -3,7 +3,7 @@
 
 ---
 
-Based on esp-idf **spi_master** driver, modified by **LoBo** [https://github.com/loboris] 03/2017
+Based on esp-idf **spi_master** driver, modified by **LoBo** [https://github.com/loboris] 06/2017
 
 ---
 
@@ -50,7 +50,7 @@ In that case replace **#include "spi_master_nodma.h"** with **#include "driver/s
 
 ---
 
-#### Example
+#### Example: SPI Display driver
 
 To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Default pins used are:
 * mosi: 23
@@ -62,35 +62,32 @@ To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Def
 
 ---
 
-**If you have ILI9488, set** `uint8_t color_bits = 24` in *tftfunc.c*
+**If you have ILI9488, set** `#define DISP_TYPE_ILI9488	1` in *tftfunc.h*
 
-**If you have ILI9341, set** `uint8_t color_bits = 16` in *tftfunc.c*
-
-**If you want to test read function, set** `#define DISPLAY_READ 1` in *spi_master_demo.c* (**currently not working for ILI9488**)
+**If you have ILI9341, set** `#define DISP_TYPE_ILI9341	1` in *tftfunc.h*
 
 **If you want to use different pins, change them in** *tftfunc.h*
 
-**if you dont have the touch screen, comment** `#define USE_TOUCH` in *spi_master_demo.c*
+**if you want to use the touch screen functions, set** `#define USE_TOUCH	1` in *tftfunc.h*
 
 Using *make menuconfig* **select tick rate 1000** ( → Component config → FreeRTOS → Tick rate (Hz) ) to get more accurate timings
 
 ---
 
-This code tests accessing ILI9341 or ILI9488 based display using **spi_master_nodma** driver and prints some timings.
-
-Some fancy graphics is displayed on the ILI9341-based 320x240 LCD (or ILI9488-based 480x320 LCD), lines, pixels and color bars.
+*  This example tests accessing ILI9341 or ILI9488 based display using **spi_master_nodma** driver
+*  Basics functions are executed first and timings at several spi clock speeds are printed.
+*  For different JPG images are shown on screen to demonstrate jpeg decoding
+*  Text and graphics are drawn on screen to demonstrate some drawing functions and text/fonts functionality
 
 Sending individual pixels is more than 10 times faster with this driver than when using *spi_master*
  
 Reading the display content is demonstrated by comparing random sent and read color line.
  
 If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep the display touched until the info is printed.
- 
+
 ---
 
 **TFT library with many drawing functions and fonts is now included.**
-
-The example shows some drawing and text/fonts capabilities.
 
 ![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo.jpg)
 
@@ -100,57 +97,36 @@ The example shows some drawing and text/fonts capabilities.
 
 ```
 ===================================
-spi_master_nodma demo, LoBo 03/2017
+spi_master_nodma demo, LoBo 04/2017
 ===================================
 
 SPI: bus initialized
-SPI: attached display device, speed=5000000
+SPI: attached display device, speed=8000000
 SPI: bus uses native pins: true
-SPI: attached TS device, speed=2500000
 SPI: display init...
 OK
 -------------
- Disp clock =  5.00 MHz ( 5.00)
-      Lines =  1153  ms (240 lines of 320 pixels)
- Read check      OK, line 110
-     Pixels =  2775  ms (320x240)
-        Cls =   259  ms (320x240)
+ Disp clock =  8.00 MHz (requested:  8.00)
+      Lines =  1926  ms (320 lines of 480 pixels)
+ Read check      OK, line 218
+     Pixels =  4096  ms (480x320)
+        Cls =   512  ms (480x320)
 -------------
 -------------
- Disp clock =  8.00 MHz ( 8.00)
-      Lines =  1057  ms (240 lines of 320 pixels)
- Read check      OK, line 112
-     Pixels =  1952  ms (320x240)
-        Cls =   166  ms (320x240)
- Touched at (294,269) [row TS values]
+ Disp clock = 16.00 MHz (requested: 16.00)
+      Lines =  1690  ms (320 lines of 480 pixels)
+ Read check      OK, line 293
+     Pixels =  2625  ms (480x320)
+        Cls =   278  ms (480x320)
 -------------
+### MAX READ SPI CLOCK = 16000000 ###
 -------------
- Disp clock = 16.00 MHz (16.00)
-      Lines =   978  ms (240 lines of 320 pixels)
- Read check      OK, line 94
-     Pixels =  1259  ms (320x240)
-        Cls =    88  ms (320x240)
+ Disp clock = 40.00 MHz (requested: 40.00)
+      Lines =  1549  ms (320 lines of 480 pixels)
+ Read check     Err, on line 300 at 1 (Read clock = 40.00 MHz)
+     Pixels =  1751  ms (480x320)
+        Cls =   139  ms (480x320)
 -------------
--------------
- Disp clock = 20.00 MHz (20.00)
-      Lines =   962  ms (240 lines of 320 pixels)
- Read check      OK, line 190
-     Pixels =  1118  ms (320x240)
-        Cls =    73  ms (320x240)
- Touched at (1719,1710) [row TS values]
--------------
--------------
- Disp clock = 26.67 MHz (30.00)
-      Lines =   946  ms (240 lines of 320 pixels)
- Read check      OK, line 151
-     Pixels =   990  ms (320x240)
-        Cls =    57  ms (320x240)
--------------
--------------
- Disp clock = 40.00 MHz (40.00)
-      Lines =   930  ms (240 lines of 320 pixels)
- Read check      OK, line 25
-     Pixels =   848  ms (320x240)
-        Cls =    42  ms (320x240)
--------------
+
+Graphics demo started
 ```

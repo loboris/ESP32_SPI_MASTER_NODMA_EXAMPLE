@@ -10,7 +10,7 @@
 #include "freertos/task.h"
 
 // ### set it to 16 for ILI9341; 24 for ILI9488 ###
-uint8_t color_bits = 24;
+
 uint16_t *tft_line = NULL;
 uint16_t _width = 320;
 uint16_t _height = 240;
@@ -158,26 +158,23 @@ void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_
 	while (handle->host->hw->cmd.usr);
 	disp_spi_transfer_cmd(handle, TFT_RAMWR);
 
-    if (color_bits == 16) {
-        //wd = (uint32_t)color;
-        wd = (uint32_t)(color >> 8);
-        wd |= (uint32_t)(color & 0xff) << 8;
-    }
-    else {
-        uint8_t r = (((color & 0xF800) >> 11) * 255) / 31;
-        uint8_t g = (((color & 0x07E0) >> 5) * 255) / 63;
-        uint8_t b = ((color & 0x001F) * 255) / 31;
-        wd = r;
-        wd |= (uint32_t)(g) << 8;
-        wd |= (uint32_t)(b) << 16;
-    }
+#if (COLOR_BITS == 16)
+    wd = (uint32_t)(color >> 8);
+    wd |= (uint32_t)(color & 0xff) << 8;
+#else
+    uint8_t r = (((color & 0xF800) >> 11) * 255) / 31;
+    uint8_t g = (((color & 0x07E0) >> 5) * 255) / 63;
+    uint8_t b = ((color & 0x001F) * 255) / 31;
+    wd = r;
+    wd |= (uint32_t)(g) << 8;
+    wd |= (uint32_t)(b) << 16;
+#endif
 
     // Set DC to 1 (data mode);
 	gpio_set_level(PIN_NUM_DC, 1);
 
 	handle->host->hw->data_buf[0] = wd;
-    disp_spi_transfer_start(handle, color_bits);
-
+    disp_spi_transfer_start(handle, COLOR_BITS);
     // Wait for SPI bus ready
 	while (handle->host->hw->cmd.usr);
 }
@@ -200,8 +197,10 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
 	uint32_t wd = 0;
 	uint32_t bits = 0;
     uint8_t wbits = 0;
+#if (COLOR_BITS == 24)
     uint8_t red=0, green=0, blue=0;
     uint16_t clr = 0;
+#endif
 
 	// Wait for SPI bus ready
 	while (handle->host->hw->cmd.usr);
@@ -211,17 +210,19 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
 	// Set DC to 1 (data mode);
 	gpio_set_level(PIN_NUM_DC, 1);
 
-    if ((rep) && (color_bits == 24)) {
+#if (COLOR_BITS == 24)
+    if (rep) {
         // prepare color data for ILI9844 in repeat color mode
         clr = (uint16_t)color[0] | ((uint16_t)color[1] << 8);
         red = (((clr & 0xF800) >> 11) * 255) / 31;
         green = (((clr & 0x07E0) >> 5) * 255) / 63;
         blue = ((clr & 0x001F) * 255) / 31;
     }
+#endif
 
-	while (count < len) {
+    while (count < len) {
         // ** Check if we have enough bits in spi buffer for the next color
-    	if ((bits + color_bits) > 512) {
+    	if ((bits + COLOR_BITS) > 512) {
     	    if (wbits) handle->host->hw->data_buf[idx] = wd;
     		// ** SPI buffer full, send data
 			disp_spi_transfer_start(handle, bits);
@@ -234,66 +235,59 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
     	}
 
     	// ==== Push color data to spi buffer ====
+#if (COLOR_BITS == 16)
     	if (rep) {
 			// get color data from color pointer
-            if (color_bits == 16) {
-                wd |= (uint32_t)color[1];
-                wd |= (uint32_t)color[0] << 8;
-                wbits += 16;
-            }
+			wd |= (uint32_t)color[1];
+			wd |= (uint32_t)color[0] << 8;
 		}
 		else {
 			// get color data from buffer
-            if (color_bits == 16) {
-                wd |= (uint32_t)color[count<<1];
-                wd |= (uint32_t)color[(count<<1)+1] << 8;
-                wbits += 16;
-            }
+			wd |= (uint32_t)color[count<<1];
+			wd |= (uint32_t)color[(count<<1)+1] << 8;
 		}
-        if (color_bits == 24) {
-            if (rep == 0) {
-                clr = (uint16_t)color[(count<<1)+1] | ((uint16_t)color[(count<<1)] << 8);
-                red = (((clr & 0xF800) >> 11) * 255) / 31;
-                green = (((clr & 0x07E0) >> 5) * 255) / 63;
-                blue = ((clr & 0x001F) * 255) / 31;
-            }
-            wd |= (uint32_t)(red) << wbits;
-            wbits += 8;
-            if (wbits == 32) {
-                handle->host->hw->data_buf[idx] = wd;
-                wd = 0;
-                wbits = 0;
-                idx++;
-            }
-            wd |= (uint32_t)(green) << wbits;
-            wbits += 8;
-            if (wbits == 32) {
-                handle->host->hw->data_buf[idx] = wd;
-                wd = 0;
-                wbits = 0;
-                idx++;
-            }
-            wd |= (uint32_t)(blue) << wbits;
-            wbits += 8;
-            if (wbits == 32) {
-                handle->host->hw->data_buf[idx] = wd;
-                wd = 0;
-                wbits = 0;
-                idx++;
-            }
+		wbits += 16;
+        if (wbits == 32) {
+            handle->host->hw->data_buf[idx] = wd;
+            wd = 0;
+            wbits = 0;
+            idx++;
         }
-        else {
-            if (wbits == 32) {
-                handle->host->hw->data_buf[idx] = wd;
-                wd = 0;
-                wbits = 0;
-                idx++;
-            }
-        }
-
+#else
+		if (rep == 0) {
+			clr = (uint16_t)color[(count<<1)+1] | ((uint16_t)color[(count<<1)] << 8);
+			red = (((clr & 0xF800) >> 11) * 255) / 31;
+			green = (((clr & 0x07E0) >> 5) * 255) / 63;
+			blue = ((clr & 0x001F) * 255) / 31;
+		}
+		wd |= (uint32_t)(red) << wbits;
+		wbits += 8;
+		if (wbits == 32) {
+			handle->host->hw->data_buf[idx] = wd;
+			wd = 0;
+			wbits = 0;
+			idx++;
+		}
+		wd |= (uint32_t)(green) << wbits;
+		wbits += 8;
+		if (wbits == 32) {
+			handle->host->hw->data_buf[idx] = wd;
+			wd = 0;
+			wbits = 0;
+			idx++;
+		}
+		wd |= (uint32_t)(blue) << wbits;
+		wbits += 8;
+		if (wbits == 32) {
+			handle->host->hw->data_buf[idx] = wd;
+			wd = 0;
+			wbits = 0;
+			idx++;
+		}
+#endif
         // Increment color & bits counters
     	count++;
-    	bits += color_bits;
+    	bits += COLOR_BITS;
     	if (count == len) break;
     }
     if (wbits) {
@@ -338,12 +332,6 @@ int IRAM_ATTR disp_spi_read_data(spi_nodma_device_handle_t handle, int x1, int y
 	ret = spi_nodma_transfer_data(handle, &t); // Transmit using direct mode
 
 	if (ret == ESP_OK) {
-		/*
-		for (int i=25; i<48; i+=3) {
-			printf("[%02x,%02x,%02x] ",rbuf[i],rbuf[i+1],rbuf[i+2]);
-		}
-		printf("\r\n");
-		*/
 		int idx = 0;
 		uint16_t color;
 		for (int i=1; i<(len*3); i+=3) {

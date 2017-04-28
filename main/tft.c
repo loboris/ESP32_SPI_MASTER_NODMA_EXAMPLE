@@ -16,6 +16,7 @@
 #include "tft.h"
 #include "time.h"
 #include <math.h>
+#include "tjpgd.h"
 
 
 // Constants for ellipse function
@@ -92,7 +93,7 @@ extern uint8_t tft_tooney32[];
 
 //static uint8_t tp_initialized = 0;	// touch panel initialized flag
 
-static uint8_t *userfont = NULL;
+//static uint8_t *userfont = NULL;
 
 uint8_t orientation = PORTRAIT;	// screen orientation
 uint8_t rotation = 0;			// font rotation
@@ -112,8 +113,8 @@ static propFont	fontChar;
 uint32_t tp_calx = 7472920;
 uint32_t tp_caly = 122224794;
 
-static float _arcAngleMax = DEFAULT_ARC_ANGLE_MAX;
-static float _angleOffset = DEFAULT_ANGLE_OFFSET;
+//static float _arcAngleMax = DEFAULT_ARC_ANGLE_MAX;
+//static float _angleOffset = DEFAULT_ANGLE_OFFSET;
 
 // ================ Basics drawing functions ===================================
 // Only functions which actually sends data to display
@@ -370,8 +371,9 @@ void TFT_drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color
   }
 }
 
+/*
 //-----------------------------------------------------------------------------------------------
-static void drawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t length, uint16_t color)
+void drawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t length, uint16_t color)
 {
 	TFT_drawLine(
 		x,
@@ -389,7 +391,7 @@ void DrawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t start, uint16
 		x + (start + length) * cos((angle + _angleOffset) * DEG_TO_RAD),
 		y + (start + length) * sin((angle + _angleOffset) * DEG_TO_RAD), color);
 }
-
+*/
 
 // Draw a triangle
 //-----------------------------------------------------------------------------------------------------------------
@@ -401,8 +403,8 @@ void TFT_drawTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16
 }
 
 // Fill a triangle
-//------------------------------------------------------------------------------------------------------------------------
-static void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+//-----------------------------------------------------------------------------------------------------------------
+void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
   int16_t a, b, y, last;
 
@@ -722,9 +724,10 @@ void TFT_draw_filled_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry,
   }
 }
 
+/*
 // Adapted from: Marek Buriak (https://github.com/marekburiak/ILI9341_due)
-//---------------------------------------------------------------------------------------------------------------------------------------
-static void TFT_fillArcOffsetted(uint16_t cx, uint16_t cy, uint16_t radius, uint16_t thickness, float start, float end, uint16_t color) {
+//--------------------------------------------------------------------------------------------------------------------------------
+void TFT_fillArcOffsetted(uint16_t cx, uint16_t cy, uint16_t radius, uint16_t thickness, float start, float end, uint16_t color) {
 	int16_t xmin = 65535, xmax = -32767, ymin = 32767, ymax = -32767;
 	float cosStart, sinStart, cosEnd, sinEnd;
 	float r, t;
@@ -891,6 +894,7 @@ static void TFT_fillArcOffsetted(uint16_t cx, uint16_t cy, uint16_t radius, uint
 		}
 	}
 }
+*/
 
 //----------------------------------------------------------------------------------------------
 void drawPolygon(int cx, int cy, int sides, int diameter, uint16_t color, uint8_t fill, int deg)
@@ -1443,14 +1447,14 @@ void TFT_print(char *st, int x, int y) {
 // Input: m new rotation value (0 to 3)
 //-------------------------------
 void TFT_setRotation(uint8_t m) {
-  uint8_t rotation = m & 3; // can't be higher than 3
-  uint8_t send = 1;
-  uint8_t madctl = 0;
+	uint8_t rotation = m & 3; // can't be higher than 3
+	uint8_t send = 1;
+	uint8_t madctl = 0;
 
-  if (m > 3) madctl = (m & 0xF8); // for testing, manually set MADCTL register
-  else {
-	  orientation = m;
-	  if (color_bits == 16) {
+	if (m > 3) madctl = (m & 0xF8); // for testing, manually set MADCTL register
+	else {
+		orientation = m;
+#if DISP_TYPE_ILI9341
 		if ((rotation & 1)) {
 			_width  = ILI9341_HEIGHT;
 			_height = ILI9341_WIDTH;
@@ -1460,21 +1464,20 @@ void TFT_setRotation(uint8_t m) {
 			_height = ILI9341_HEIGHT;
 		}
 		switch (rotation) {
-		  case PORTRAIT:
+		case PORTRAIT:
 			madctl = (MADCTL_MX | MADCTL_BGR);
 			break;
-		  case LANDSCAPE:
+		case LANDSCAPE:
 			madctl = (MADCTL_MV | MADCTL_BGR);
 			break;
-		  case PORTRAIT_FLIP:
+		case PORTRAIT_FLIP:
 			madctl = (MADCTL_MY | MADCTL_BGR);
 			break;
-		  case LANDSCAPE_FLIP:
+		case LANDSCAPE_FLIP:
 			madctl = (MADCTL_MX | MADCTL_MY | MADCTL_MV | MADCTL_BGR);
 			break;
 		}
-	  }
-	  else if (color_bits == 24) {
+#elif DISP_TYPE_ILI9488
 		if ((rotation & 1)) {
 			_width  = ILI9488_HEIGHT;
 			_height = ILI9488_WIDTH;
@@ -1497,22 +1500,21 @@ void TFT_setRotation(uint8_t m) {
 			madctl = (MADCTL_MX | MADCTL_MY | MADCTL_MV | MADCTL_BGR);
 			break;
 		}
-	  }
-	  else send = 0;
-  }
+#else
+		send = 0;
+#endif
+	}
+	if (send) {
+		if (spi_nodma_device_select(disp_spi, 0) == ESP_OK) {
+			disp_spi_transfer_cmd_data(disp_spi, TFT_MADCTL, &madctl, 1);
+			spi_nodma_device_deselect(disp_spi);
+		}
+	}
 
-  if (send) {
-	  if (spi_nodma_device_select(disp_spi, 0) == ESP_OK) {
-		  disp_spi_transfer_cmd_data(disp_spi, TFT_MADCTL, &madctl, 1);
-		  spi_nodma_device_deselect(disp_spi);
-	  }
-  }
-
-  dispWin.x1 = 0;
-  dispWin.y1 = 0;
-  dispWin.x2 = _width-1;
-  dispWin.y2 = _height-1;
-
+	dispWin.x1 = 0;
+	dispWin.y1 = 0;
+	dispWin.x2 = _width-1;
+	dispWin.y2 = _height-1;
 }
 
 // Send the command to invert all of the colors.
@@ -1694,5 +1696,252 @@ void set_font_atrib(uint8_t l, uint8_t w, int offset, uint16_t color) {
 	cfont.y_size = w;
 	cfont.offset = offset;
 	cfont.color  = color;
+}
+
+
+// ================ JPG SUPPORT ================================================
+// User defined device identifier
+typedef struct {
+	FILE *fhndl;		// File handler for input function
+    uint16_t x;			// image top left point X position
+    uint16_t y;			// image top left point Y position
+    uint8_t *membuff;	// memory buffer containing the image
+    uint32_t bufsize;	// size of the memory buffer
+    uint32_t bufptr;	// memory buffer current possition
+} JPGIODEV;
+
+
+// User defined call-back function to input JPEG data from file
+//---------------------
+static UINT tjd_input (
+	JDEC* jd,		// Decompression object
+	BYTE* buff,		// Pointer to the read buffer (NULL:skip)
+	UINT nd			// Number of bytes to read/skip from input stream
+)
+{
+	int rb = 0;
+	// Device identifier for the session (5th argument of jd_prepare function)
+	JPGIODEV *dev = (JPGIODEV*)jd->device;
+
+	if (buff) {	// Read nd bytes from the input strem
+		rb = fread(buff, 1, nd, dev->fhndl);
+		return rb;	// Returns actual number of bytes read
+	}
+	else {	// Remove nd bytes from the input stream
+		if (fseek(dev->fhndl, nd, SEEK_CUR) >= 0) return nd;
+		else return 0;
+	}
+}
+
+// User defined call-back function to input JPEG data from memory buffer
+//-------------------------
+static UINT tjd_buf_input (
+	JDEC* jd,		// Decompression object
+	BYTE* buff,		// Pointer to the read buffer (NULL:skip)
+	UINT nd			// Number of bytes to read/skip from input stream
+)
+{
+	// Device identifier for the session (5th argument of jd_prepare function)
+	JPGIODEV *dev = (JPGIODEV*)jd->device;
+	if (!dev->membuff) return 0;
+	if (dev->bufptr >= (dev->bufsize + 2)) return 0; // end of stream
+
+	if ((dev->bufptr + nd) > (dev->bufsize + 2)) nd = (dev->bufsize + 2) - dev->bufptr;
+
+	if (buff) {	// Read nd bytes from the input strem
+		memcpy(buff, dev->membuff + dev->bufptr, nd);
+		dev->bufptr += nd;
+		return nd;	// Returns number of bytes read
+	}
+	else {	// Remove nd bytes from the input stream
+		dev->bufptr += nd;
+		return nd;
+	}
+}
+
+// User defined call-back function to output RGB bitmap
+//----------------------
+static UINT tjd_output (
+	JDEC* jd,		// Decompression object of current session
+	void* bitmap,	// Bitmap data to be output
+	JRECT* rect		// Rectangular region to output
+)
+{
+	// Device identifier for the session (5th argument of jd_prepare function)
+	JPGIODEV *dev = (JPGIODEV*)jd->device;
+
+	// ** Put the rectangular into the display device **
+	uint16_t x;
+	uint16_t y;
+	BYTE *src = (BYTE*)bitmap;
+	uint16_t left = rect->left + dev->x;
+	uint16_t top = rect->top + dev->y;
+	uint16_t right = rect->right + dev->x;
+	uint16_t bottom = rect->bottom + dev->y;
+	uint16_t color;
+
+	if ((left >= _width) || (top >= _height)) return 1;	// out of screen area, return
+
+	int len = ((right-left+1) * (bottom-top+1));		// calculate length of data
+
+	if ((len > 0) && (len <= (TFT_LINEBUF_MAX_SIZE))) {
+		uint16_t bufidx = 0;
+
+	    for (y = top; y <= bottom; y++) {
+		    for (x = left; x <= right; x++) {
+		    	// Clip to display area
+		    	if ((x < _width) && (y < _height)) {
+		    		color = (uint16_t)*src++;
+		    		color |= ((uint16_t)*src++) << 8;
+		    		tft_line[bufidx++] = color;
+		    	}
+		    	else src += 2;
+		    }
+	    }
+	    if (right > _width) right = _width-1;
+	    if (bottom > _height) bottom = _height-1;
+	    send_data(left, top, right, bottom, bufidx, tft_line);
+	}
+	else {
+		printf("max data size exceded: %d (%d,%d,%d,%d)\r\n", len, left,top,right,bottom);
+		return 0;  // stop decompression
+	}
+
+	return 1;	// Continue to decompression
+}
+
+// tft.jpgimage(X, Y, scale, file_name [, from_cam]
+//=================================================================================
+void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int size)
+{
+	JPGIODEV dev;
+    struct stat sb;
+    uint8_t dbg = 0;
+
+	if ((maxscale < 0) || (maxscale > 3)) maxscale = 3;
+
+    if (!tft_line) {
+    	if (dbg) printf("Error: Line buffer not allocated\r\n");
+        return;
+    }
+
+    if (fname == NULL) {
+    	// image from buffer
+    	dev.fhndl = NULL;
+        dev.membuff = buf;
+        dev.bufsize = size;
+        dev.bufptr = 0;
+    }
+    else {
+    	// image from file
+        dev.membuff = NULL;
+        dev.bufsize = 0;
+
+        if (stat(fname, &sb) != 0) {
+        	if (dbg) printf("File error: %ss\r\n", strerror(errno));
+        }
+
+        dev.fhndl = fopen(fname, "r");
+        if (!dev.fhndl) {
+        	if (dbg) printf("Error opening file: %s\r\n", strerror(errno));
+        }
+    }
+
+	char *work;				// Pointer to the working buffer (must be 4-byte aligned)
+	UINT sz_work = 3800;	// Size of the working buffer (must be power of 2)
+	JDEC jd;				// Decompression object (70 bytes)
+	JRESULT rc;
+	BYTE scale = 0;
+	uint8_t radj = 0;
+	uint8_t badj = 0;
+
+	if ((x < 0) && (x != CENTER) && (x != RIGHT)) x = 0;
+	if ((y < 0) && (y != CENTER) && (y != BOTTOM)) y = 0;
+	if (x > (_width-5)) x = _width - 5;
+	if (y > (_height-5)) y = _height - 5;
+
+	work = malloc(sz_work);
+	if (work) {
+		if (dev.membuff) rc = jd_prepare(&jd, tjd_buf_input, (void *)work, sz_work, &dev);
+		else rc = jd_prepare(&jd, tjd_input, (void *)work, sz_work, &dev);
+		if (rc == JDR_OK) {
+			if (x == CENTER) {
+				x = _width - (jd.width >> scale);
+				if (x < 0) {
+					if (maxscale) {
+						for (scale = 0; scale <= maxscale; scale++) {
+							if (((jd.width >> scale) <= (_width)) && ((jd.height >> scale) <= (_height))) break;
+							if (scale == maxscale) break;
+						}
+						x = _width - (jd.width >> scale);
+						if (x < 0) x = 0;
+						else x >>= 1;
+						maxscale = 0;
+					}
+					else x = 0;
+				}
+				else x >>= 1;
+			}
+			if (y == CENTER) {
+				y = _height - (jd.height >> scale);
+				if (y < 0) {
+					if (maxscale) {
+						for (scale = 0; scale <= maxscale; scale++) {
+							if (((jd.width >> scale) <= (_width)) && ((jd.height >> scale) <= (_height))) break;
+							if (scale == maxscale) break;
+						}
+						y = _height - (jd.height >> scale);
+						if (y < 0) y = 0;
+						else y >>= 1;
+						maxscale = 0;
+					}
+					else y = 0;
+				}
+				else y >>= 1;
+			}
+			if (x == RIGHT) {
+				x = 0;
+				radj = 1;
+			}
+			if (y == BOTTOM) {
+				y = 0;
+				badj = 1;
+			}
+			// Determine scale factor
+			if (maxscale) {
+				for (scale = 0; scale <= maxscale; scale++) {
+					if (((jd.width >> scale) <= (_width-x)) && ((jd.height >> scale) <= (_height-y))) break;
+					if (scale == maxscale) break;
+				}
+			}
+			if (dbg) printf("Image dimensions: %dx%d, scale: %d, bytes used: %d\r\n", jd.width, jd.height, scale, jd.sz_pool);
+
+			if (radj) {
+				x = _width - (jd.width >> scale);
+				if (x < 0) x = 0;
+			}
+			if (badj) {
+				y = _height - (jd.height >> scale);
+				if (y < 0) y = 0;
+			}
+			dev.x = x;
+			dev.y = y;
+			// Start to decompress the JPEG file
+			rc = jd_decomp(&jd, tjd_output, scale);
+			if (rc != JDR_OK) {
+				if (dbg) printf("jpg decompression error %d\r\n", rc);
+			}
+		}
+		else {
+			if (dbg) printf("jpg prepare error %d\r\n", rc);
+		}
+
+		free(work);  // free work buffer
+	}
+	else {
+		if (dbg) printf("work buffer allocation error\r\n");
+	}
+
+    if (dev.fhndl) fclose(dev.fhndl);  // close input file
 }
 
