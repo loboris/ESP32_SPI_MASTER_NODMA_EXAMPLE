@@ -52,7 +52,7 @@ In that case replace **#include "spi_master_nodma.h"** with **#include "driver/s
 
 #### Example: SPI Display driver
 
-**The example is restructured, many changes are made, the dafault operating mode is now 18-bit color, as it works with both ILI9488 and ILI9341. The coce is not fully tested with ILI9431 xet.**
+**The example is restructured, many changes are made, the dafault operating mode is now 18-bit color, as it works with both ILI9488 and ILI9341. The code is not fully tested with ILI9431 yet.**
 
 
 To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Default pins used are:
