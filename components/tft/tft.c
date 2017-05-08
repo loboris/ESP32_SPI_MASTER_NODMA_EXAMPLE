@@ -16,22 +16,8 @@
 #include "tft.h"
 #include "time.h"
 #include <math.h>
-#include "tjpgd.h"
+#include "rom/tjpgd.h"
 
-
-// Constants for ellipse function
-#define TFT_ELLIPSE_UPPER_RIGHT 0x01
-#define TFT_ELLIPSE_UPPER_LEFT  0x02
-#define TFT_ELLIPSE_LOWER_LEFT 0x04
-#define TFT_ELLIPSE_LOWER_RIGHT  0x08
-
-// Constants for Arc function
-// number representing the maximum angle (e.g. if 100, then if you pass in start=0 and end=50, you get a half circle)
-// this can be changed with setArcParams function at runtime
-#define DEFAULT_ARC_ANGLE_MAX 360
-// rotational offset in degrees defining position of value 0 (-90 will put it at the top of circle)
-// this can be changed with setAngleOffset function at runtime
-#define DEFAULT_ANGLE_OFFSET -90
 
 #define DEG_TO_RAD 0.01745329252
 #define RAD_TO_DEG 57.295779513
@@ -45,6 +31,27 @@
 #define min(A,B) ( (A) < (B) ? (A):(B))
 #endif
 
+// Color definitions constants
+const color_t TFT_BLACK       = {   0,   0,   0 };
+const color_t TFT_NAVY        = {   0,   0, 128 };
+const color_t TFT_DARKGREEN   = {   0, 128,   0 };
+const color_t TFT_DARKCYAN    = {   0, 128, 128 };
+const color_t TFT_MAROON      = { 128,   0,   0 };
+const color_t TFT_PURPLE      = { 128,   0, 128 };
+const color_t TFT_OLIVE       = { 128, 128,   0 };
+const color_t TFT_LIGHTGREY   = { 192, 192, 192 };
+const color_t TFT_DARKGREY    = { 128, 128, 128 };
+const color_t TFT_BLUE        = {   0,   0, 255 };
+const color_t TFT_GREEN       = {   0, 255,   0 };
+const color_t TFT_CYAN        = {   0, 255, 255 };
+const color_t TFT_RED         = { 255,   0,   0 };
+const color_t TFT_MAGENTA     = { 255,   0, 255 };
+const color_t TFT_YELLOW      = { 255, 255,   0 };
+const color_t TFT_WHITE       = { 255, 255, 255 };
+const color_t TFT_ORANGE      = { 255, 165,   0 };
+const color_t TFT_GREENYELLOW = { 173, 255,  47 };
+const color_t TFT_PINK        = { 255, 192, 203 };
+
 //#define tft_color(color) ( (uint16_t)((color >> 8) | (color << 8)) )
 #define swap(a, b) { int16_t t = a; a = b; b = t; }
 
@@ -55,7 +62,7 @@ typedef struct {
 	uint8_t	    offset;
 	uint16_t	numchars;
     uint8_t     bitmap;
-	uint16_t    color;
+	color_t     color;
 } Font;
 
 typedef struct {
@@ -98,8 +105,8 @@ extern uint8_t tft_tooney32[];
 uint8_t orientation = PORTRAIT;	// screen orientation
 uint16_t rotation = 0;			// font rotation
 uint8_t	_transparent = 0;
-uint16_t	_fg = TFT_GREEN;
-uint16_t _bg = TFT_BLACK;
+color_t	_fg = {   0, 255,   0 };
+color_t _bg = {   0,   0,   0 };
 uint8_t	_wrap = 0;				// character wrapping to new line
 uint8_t	_forceFixed = 0;
 
@@ -116,29 +123,37 @@ uint32_t tp_caly = 122224794;
 //static float _arcAngleMax = DEFAULT_ARC_ANGLE_MAX;
 //static float _angleOffset = DEFAULT_ANGLE_OFFSET;
 
+//------------------------------------------
+int compare_colors(color_t c1, color_t c2) {
+	if ((c1.r & 0xFC) != (c2.r & 0xFC)) return 1;
+	if ((c1.g & 0xFC) != (c2.g & 0xFC)) return 1;
+	if ((c1.b & 0xFC) != (c2.b & 0xFC)) return 1;
+	return 0;
+}
+
 // ================ Basics drawing functions ===================================
 // Only functions which actually sends data to display
 // All drawings are clipped to 'dispWin'
 
 // draw color pixel on screen
 //---------------------------------------------------------------------
-void TFT_drawPixel(int16_t x, int16_t y, uint16_t color, uint8_t sel) {
+void TFT_drawPixel(int16_t x, int16_t y, color_t color, uint8_t sel) {
 
   if ((x < dispWin.x1) || (y < dispWin.y1) || (x > dispWin.x2) || (y > dispWin.y2)) return;
 
   drawPixel(x, y, color, sel);
 }
 
-//--------------------------------------------
-uint16_t TFT_readPixel(int16_t x, int16_t y) {
+//-------------------------------------------
+color_t TFT_readPixel(int16_t x, int16_t y) {
 
-  if ((x < dispWin.x1) || (y < dispWin.y1) || (x > dispWin.x2) || (y > dispWin.y2)) return 0;
+  if ((x < dispWin.x1) || (y < dispWin.y1) || (x > dispWin.x2) || (y > dispWin.y2)) return TFT_BLACK;
 
-  return readPixel(x, y);
+  return readPixel(x, y, 1);
 }
 
 //-----------------------------------------------------------------------
-void TFT_drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) {
+void TFT_drawFastVLine(int16_t x, int16_t y, int16_t h, color_t color) {
 	// clipping
 	if ((x < dispWin.x1) || (x > dispWin.x2) || (y > dispWin.y2)) return;
 	if (y < dispWin.y1) {
@@ -152,7 +167,7 @@ void TFT_drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) {
 }
 
 //-----------------------------------------------------------------------
-void TFT_drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
+void TFT_drawFastHLine(int16_t x, int16_t y, int16_t w, color_t color) {
 	// clipping
 	if ((y < dispWin.y1) || (x > dispWin.x2) || (y > dispWin.y2)) return;
 	if (x < dispWin.x1) {
@@ -168,7 +183,7 @@ void TFT_drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
 
 // fill a rectangle
 //-----------------------------------------------------------------------------
-void TFT_fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+void TFT_fillRect(int16_t x, int16_t y, int16_t w, int16_t h, color_t color) {
 	// clipping
 	if ((x >= dispWin.x2) || (y > dispWin.y2)) return;
 
@@ -191,7 +206,7 @@ void TFT_fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
 }
 
 //-----------------------------------
-void TFT_fillScreen(uint16_t color) {
+void TFT_fillScreen(color_t color) {
 	TFT_pushColorRep(0, 0, _width-1, _height-1, color, (uint32_t)(_height*_width));
 }
 
@@ -201,7 +216,7 @@ void TFT_fillScreen(uint16_t color) {
 // ================ Graphics drawing functions ==================================
 
 //--------------------------------------------------------------------------------
-void TFT_drawRect(uint16_t x1,uint16_t y1,uint16_t w,uint16_t h, uint16_t color) {
+void TFT_drawRect(uint16_t x1,uint16_t y1,uint16_t w,uint16_t h, color_t color) {
   TFT_drawFastHLine(x1,y1,w, color);
   TFT_drawFastVLine(x1+w-1,y1,h, color);
   TFT_drawFastHLine(x1,y1+h-1,w, color);
@@ -209,7 +224,7 @@ void TFT_drawRect(uint16_t x1,uint16_t y1,uint16_t w,uint16_t h, uint16_t color)
 }
 
 //-------------------------------------------------------------------------------------------------
-static void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername, uint16_t color)
+static void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername, color_t color)
 {
 	int16_t f = 1 - r;
 	int16_t ddF_x = 1;
@@ -249,7 +264,7 @@ static void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornerna
 
 // Used to do circles and roundrects
 //----------------------------------------------------------------------------------------------------------------
-static void fillCircleHelper(int16_t x0, int16_t y0, int16_t r,	uint8_t cornername, int16_t delta, uint16_t color)
+static void fillCircleHelper(int16_t x0, int16_t y0, int16_t r,	uint8_t cornername, int16_t delta, color_t color)
 {
 	int16_t f = 1 - r;
 	int16_t ddF_x = 1;
@@ -280,7 +295,7 @@ static void fillCircleHelper(int16_t x0, int16_t y0, int16_t r,	uint8_t cornerna
 
 // Draw a rounded rectangle
 //----------------------------------------------------------------------------------------------
-void TFT_drawRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r, uint16_t color)
+void TFT_drawRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r, color_t color)
 {
 	// smarter version
 	TFT_drawFastHLine(x + r, y, w - 2 * r, color);			// Top
@@ -297,7 +312,7 @@ void TFT_drawRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r,
 
 // Fill a rounded rectangle
 //----------------------------------------------------------------------------------------------
-void TFT_fillRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r, uint16_t color)
+void TFT_fillRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r, color_t color)
 {
 	// smarter version
 	TFT_fillRect(x + r, y, w - 2 * r, h, color);
@@ -312,7 +327,7 @@ void TFT_fillRoundRect(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t r,
 // Bresenham's algorithm - thx wikipedia - speed enhanced by Bodmer this uses
 // the eficient FastH/V Line draw routine for segments of 2 pixels or more
 //-------------------------------------------------------------------------------
-void TFT_drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
+void TFT_drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, color_t color)
 {
   if (x0 == x1) {
 	  if (y0 <= y1) TFT_drawFastVLine(x0, y0, y1-y0, color);
@@ -373,7 +388,7 @@ void TFT_drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color
 
 /*
 //-----------------------------------------------------------------------------------------------
-void drawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t length, uint16_t color)
+void drawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t length, color_t color)
 {
 	TFT_drawLine(
 		x,
@@ -383,7 +398,7 @@ void drawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t length, uint1
 }
 
 //--------------------------------------------------------------------------------------------------------
-void DrawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t start, uint16_t length, uint16_t color)
+void DrawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t start, uint16_t length, color_t color)
 {
 	TFT_drawLine(
 		x + start * cos((angle + _angleOffset) * DEG_TO_RAD),
@@ -395,7 +410,7 @@ void DrawLineByAngle(int16_t x, int16_t y, int16_t angle, uint16_t start, uint16
 
 // Draw a triangle
 //-----------------------------------------------------------------------------------------------------------------
-void TFT_drawTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+void TFT_drawTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, color_t color)
 {
   TFT_drawLine(x0, y0, x1, y1, color);
   TFT_drawLine(x1, y1, x2, y2, color);
@@ -404,7 +419,7 @@ void TFT_drawTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16
 
 // Fill a triangle
 //-----------------------------------------------------------------------------------------------------------------
-void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, color_t color)
 {
   int16_t a, b, y, last;
 
@@ -481,7 +496,7 @@ void TFT_fillTriangle(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16
 }
 
 //---------------------------------------------------------------------
-void TFT_drawCircle(int16_t x, int16_t y, int radius, uint16_t color) {
+void TFT_drawCircle(int16_t x, int16_t y, int radius, color_t color) {
   int f = 1 - radius;
   int ddF_x = 1;
   int ddF_y = -2 * radius;
@@ -515,13 +530,13 @@ void TFT_drawCircle(int16_t x, int16_t y, int radius, uint16_t color) {
 }
 
 //---------------------------------------------------------------------
-void TFT_fillCircle(int16_t x, int16_t y, int radius, uint16_t color) {
+void TFT_fillCircle(int16_t x, int16_t y, int radius, color_t color) {
 	TFT_drawFastVLine(x, y-radius, 2*radius+1, color);
 	fillCircleHelper(x, y, radius, 3, 0, color);
 }
 
 //--------------------------------------------------------------------------------------------------------------------
-static void TFT_draw_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16_t y0, uint16_t color, uint8_t option)
+static void TFT_draw_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16_t y0, color_t color, uint8_t option)
 {
 	spi_nodma_device_select(disp_spi, 0);
     // upper right
@@ -536,7 +551,7 @@ static void TFT_draw_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16
 }
 
 //-------------------------------------------------------------------------------------------------------
-void TFT_draw_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry, uint16_t color, uint8_t option)
+void TFT_draw_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry, color_t color, uint8_t option)
 {
   uint16_t x, y;
   int32_t xchg, ychg;
@@ -626,7 +641,7 @@ void TFT_draw_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry, uint16
 }
 
 //---------------------------------------------------------------------------------------------------------------------------
-static void TFT_draw_filled_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16_t y0, uint16_t color, uint8_t option)
+static void TFT_draw_filled_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16_t y0, color_t color, uint8_t option)
 {
     // upper right
     if ( option & TFT_ELLIPSE_UPPER_RIGHT ) TFT_drawFastVLine(x0+x, y0-y, y+1, color);
@@ -639,7 +654,7 @@ static void TFT_draw_filled_ellipse_section(uint16_t x, uint16_t y, uint16_t x0,
 }
 
 //--------------------------------------------------------------------------------------------------------------
-void TFT_draw_filled_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry, uint16_t color, uint8_t option)
+void TFT_draw_filled_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry, color_t color, uint8_t option)
 {
   uint16_t x, y;
   int32_t xchg, ychg;
@@ -727,7 +742,7 @@ void TFT_draw_filled_ellipse(uint16_t x0, uint16_t y0, uint16_t rx, uint16_t ry,
 /*
 // Adapted from: Marek Buriak (https://github.com/marekburiak/ILI9341_due)
 //--------------------------------------------------------------------------------------------------------------------------------
-void TFT_fillArcOffsetted(uint16_t cx, uint16_t cy, uint16_t radius, uint16_t thickness, float start, float end, uint16_t color) {
+void TFT_fillArcOffsetted(uint16_t cx, uint16_t cy, uint16_t radius, uint16_t thickness, float start, float end, color_t color) {
 	int16_t xmin = 65535, xmax = -32767, ymin = 32767, ymax = -32767;
 	float cosStart, sinStart, cosEnd, sinEnd;
 	float r, t;
@@ -897,7 +912,7 @@ void TFT_fillArcOffsetted(uint16_t cx, uint16_t cy, uint16_t radius, uint16_t th
 */
 
 //----------------------------------------------------------------------------------------------
-void drawPolygon(int cx, int cy, int sides, int diameter, uint16_t color, uint8_t fill, int deg)
+void drawPolygon(int cx, int cy, int sides, int diameter, color_t color, uint8_t fill, int deg)
 {
   sides = (sides > 2? sides : 3);		// This ensures the minimum side number is 3.
   int Xpoints[sides], Ypoints[sides];	// Set the arrays based on the number of sides entered
@@ -927,7 +942,7 @@ void drawPolygon(int cx, int cy, int sides, int diameter, uint16_t color, uint8_
 
 // Similar to the Polygon function.
 //----------------------------------------------------------------------------------
-void drawStar(int cx, int cy, int diameter, uint16_t color, bool fill, float factor)
+void drawStar(int cx, int cy, int diameter, color_t color, bool fill, float factor)
 {
   factor = constrain(factor, 1.0, 4.0);
   uint8_t sides = 5;
@@ -1261,11 +1276,11 @@ static const uint16_t font_bcd[] = {
 };
 
 //-------------------------------------------------------------------------------
-static void barVert(int16_t x, int16_t y, int16_t w, int16_t l, uint16_t color) {
+static void barVert(int16_t x, int16_t y, int16_t w, int16_t l, color_t color) {
   TFT_fillTriangle(x+1, y+2*w, x+w, y+w+1, x+2*w-1, y+2*w, color);
   TFT_fillTriangle(x+1, y+2*w+l+1, x+w, y+3*w+l, x+2*w-1, y+2*w+l+1, color);
   TFT_fillRect(x, y+2*w+1, 2*w+1, l, color);
-  if ((cfont.offset) && (color != _bg)) {
+  if ((cfont.offset) && compare_colors(color, _bg)) {
     TFT_drawTriangle(x+1, y+2*w, x+w, y+w+1, x+2*w-1, y+2*w, cfont.color);
     TFT_drawTriangle(x+1, y+2*w+l+1, x+w, y+3*w+l, x+2*w-1, y+2*w+l+1, cfont.color);
     TFT_drawRect(x, y+2*w+1, 2*w+1, l, cfont.color);
@@ -1273,11 +1288,11 @@ static void barVert(int16_t x, int16_t y, int16_t w, int16_t l, uint16_t color) 
 }
 
 //------------------------------------------------------------------------------
-static void barHor(int16_t x, int16_t y, int16_t w, int16_t l, uint16_t color) {
+static void barHor(int16_t x, int16_t y, int16_t w, int16_t l, color_t color) {
   TFT_fillTriangle(x+2*w, y+2*w-1, x+w+1, y+w, x+2*w, y+1, color);
   TFT_fillTriangle(x+2*w+l+1, y+2*w-1, x+3*w+l, y+w, x+2*w+l+1, y+1, color);
   TFT_fillRect(x+2*w+1, y, l, 2*w+1, color);
-  if ((cfont.offset) && (color != _bg)) {
+  if ((cfont.offset) && compare_colors(color, _bg)) {
     TFT_drawTriangle(x+2*w, y+2*w-1, x+w+1, y+w, x+2*w, y+1, cfont.color);
     TFT_drawTriangle(x+2*w+l+1, y+2*w-1, x+3*w+l, y+w, x+2*w+l+1, y+1, cfont.color);
     TFT_drawRect(x+2*w+1, y, l, 2*w+1, cfont.color);
@@ -1285,7 +1300,7 @@ static void barHor(int16_t x, int16_t y, int16_t w, int16_t l, uint16_t color) {
 }
 
 //------------------------------------------------------------------------------------------------
-static void TFT_draw7seg(int16_t x, int16_t y, int8_t num, int16_t w, int16_t l, uint16_t color) {
+static void TFT_draw7seg(int16_t x, int16_t y, int8_t num, int16_t w, int16_t l, color_t color) {
   /* TODO: clipping */
   if (num < 0x2D || num > 0x3A) return;
 
@@ -1529,7 +1544,7 @@ void TFT_invertDisplay(const uint8_t mode) {
 /**
  * Converts the components of a color, as specified by the HSB
  * model, to an equivalent set of values for the default RGB model.
- * The _sat and _brightnesscomponents
+ * The _sat and _brightness components
  * should be floating-point values between zero and one (numbers in the range 0.0-1.0)
  * The _hue component can be any floating-point number.  The floor of this number is
  * subtracted from it to create a fraction between 0 and 1.
@@ -1538,8 +1553,8 @@ void TFT_invertDisplay(const uint8_t mode) {
  * The integer that is returned by HSBtoRGB encodes the
  * value of a color in bits 0-15 of an integer value
 */
-//------------------------------------------------------------
-uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
+//-----------------------------------------------------------
+color_t HSBtoRGB(float _hue, float _sat, float _brightness) {
  float red = 0.0;
  float green = 0.0;
  float blue = 0.0;
@@ -1599,11 +1614,12 @@ uint16_t HSBtoRGB(float _hue, float _sat, float _brightness) {
    }
  }
 
- uint8_t ired = (uint8_t)(red * 31.0);
- uint8_t igreen = (uint8_t)(green * 63.0);
- uint8_t iblue = (uint8_t)(blue * 31.0);
+ color_t color;
+ color.r = ((uint8_t)(red * 255.0)) & 0xFC;
+ color.g = ((uint8_t)(green * 255.0)) & 0xFC;
+ color.b = ((uint8_t)(blue * 255.0)) & 0xFC;
 
- return (uint16_t)((ired << 11) | (igreen << 5) | (iblue & 0x001F));
+ return color;
 }
 
 
@@ -1692,7 +1708,7 @@ void tft_resetclipwin()
 }
 
 //---------------------------------------------------------------------
-void set_font_atrib(uint8_t l, uint8_t w, int offset, uint16_t color) {
+void set_font_atrib(uint8_t l, uint8_t w, int offset, color_t color) {
 	cfont.x_size = l;
 	cfont.y_size = w;
 	cfont.offset = offset;
@@ -1709,6 +1725,7 @@ typedef struct {
     uint8_t *membuff;	// memory buffer containing the image
     uint32_t bufsize;	// size of the memory buffer
     uint32_t bufptr;	// memory buffer current possition
+    uint8_t intrans;
 } JPGIODEV;
 
 
@@ -1760,7 +1777,7 @@ static UINT tjd_buf_input (
 	}
 }
 
-// User defined call-back function to output RGB bitmap
+// User defined call-back function to output RGB bitmap to display device
 //----------------------
 static UINT tjd_output (
 	JDEC* jd,		// Decompression object of current session
@@ -1775,33 +1792,43 @@ static UINT tjd_output (
 	uint16_t x;
 	uint16_t y;
 	BYTE *src = (BYTE*)bitmap;
+
 	uint16_t left = rect->left + dev->x;
 	uint16_t top = rect->top + dev->y;
 	uint16_t right = rect->right + dev->x;
 	uint16_t bottom = rect->bottom + dev->y;
-	uint16_t color;
+	uint8_t *dest = (uint8_t *)tft_line;
 
 	if ((left >= _width) || (top >= _height)) return 1;	// out of screen area, return
 
-	int len = ((right-left+1) * (bottom-top+1));		// calculate length of data
+	uint32_t len = ((right-left+1) * (bottom-top+1));		// calculate length of data
 
 	if ((len > 0) && (len <= (TFT_LINEBUF_MAX_SIZE))) {
-		uint16_t bufidx = 0;
-
+		uint16_t dright = 0;
+		uint16_t dbottom = 0;
 	    for (y = top; y <= bottom; y++) {
 		    for (x = left; x <= right; x++) {
 		    	// Clip to display area
 		    	if ((x < _width) && (y < _height)) {
-		    		color = (uint16_t)*src++;
-		    		color |= ((uint16_t)*src++) << 8;
-		    		tft_line[bufidx++] = color;
+		    		*dest++ = *src++;
+		    		*dest++ = *src++;
+		    		*dest++ = *src++;
+		    		if (dright < x) dright = x;
+		    		if (dbottom < y) dbottom = y;
 		    	}
-		    	else src += 2;
+		    	else src += 3;
 		    }
 	    }
-	    if (right > _width) right = _width-1;
-	    if (bottom > _height) bottom = _height-1;
-	    send_data(left, top, right, bottom, bufidx, tft_line);
+		len = ((dright-left+1) * (dbottom-top+1));		// calculate length of data
+
+		if (tft_use_trans) {
+			if (dev->intrans) {
+				if (send_data_finish() != ESP_OK) return 0;
+			}
+			if (send_data_trans(left, top, dright, dbottom, len, tft_line) != ESP_OK) return 0;
+			dev->intrans = 1;
+		}
+		else send_data(left, top, dright, dbottom, len, tft_line);
 	}
 	else {
 		printf("max data size exceded: %d (%d,%d,%d,%d)\r\n", len, left,top,right,bottom);
@@ -1811,15 +1838,15 @@ static UINT tjd_output (
 	return 1;	// Continue to decompression
 }
 
-// tft.jpgimage(X, Y, scale, file_name [, from_cam]
-//=================================================================================
-void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int size)
+// tft.jpgimage(X, Y, scale, file_name, buf, size]
+//===============================================================================
+void tft_jpg_image(int x, int y, int ascale, char *fname, uint8_t *buf, int size)
 {
 	JPGIODEV dev;
     struct stat sb;
     uint8_t dbg = 0;
-
-	if ((maxscale < 0) || (maxscale > 3)) maxscale = 3;
+    int maxscale = 3;
+	BYTE scale = 0;
 
     if (!tft_line) {
     	if (dbg) printf("Error: Line buffer not allocated\r\n");
@@ -1847,12 +1874,12 @@ void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int si
         	if (dbg) printf("Error opening file: %s\r\n", strerror(errno));
         }
     }
+    dev.intrans = 0;
 
 	char *work;				// Pointer to the working buffer (must be 4-byte aligned)
 	UINT sz_work = 3800;	// Size of the working buffer (must be power of 2)
 	JDEC jd;				// Decompression object (70 bytes)
 	JRESULT rc;
-	BYTE scale = 0;
 	uint8_t radj = 0;
 	uint8_t badj = 0;
 
@@ -1863,6 +1890,10 @@ void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int si
 
 	work = malloc(sz_work);
 	if (work) {
+		if (ascale >= 0) {
+			scale = ascale;
+			maxscale = 0;
+		}
 		if (dev.membuff) rc = jd_prepare(&jd, tjd_buf_input, (void *)work, sz_work, &dev);
 		else rc = jd_prepare(&jd, tjd_input, (void *)work, sz_work, &dev);
 		if (rc == JDR_OK) {
@@ -1928,10 +1959,15 @@ void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int si
 			dev.x = x;
 			dev.y = y;
 			// Start to decompress the JPEG file
+
+		    uint32_t tstart = clock();
 			rc = jd_decomp(&jd, tjd_output, scale);
+			if ((tft_use_trans) && (dev.intrans)) send_data_finish();
 			if (rc != JDR_OK) {
 				if (dbg) printf("jpg decompression error %d\r\n", rc);
 			}
+			tstart = clock() - tstart;
+			if (dbg) printf("Decode time: %u ms\r\n", tstart);
 		}
 		else {
 			if (dbg) printf("jpg prepare error %d\r\n", rc);
@@ -1945,4 +1981,152 @@ void tft_jpg_image(int x, int y, int maxscale, char *fname, uint8_t *buf, int si
 
     if (dev.fhndl) fclose(dev.fhndl);  // close input file
 }
+
+//=====================================================================
+int tft_bmp_image(int x, int y, char *fname, uint8_t *imgbuf, int size)
+{
+	vTaskDelay(500 / portTICK_RATE_MS);
+	FILE *fhndl = NULL;
+	struct stat sb;
+	uint32_t xrd = 0;
+	uint8_t err = 9;
+	uint8_t intrans = 0;
+	uint8_t tmpc;
+	int i;
+
+    if (!tft_line) {
+	    printf("Line buffer not allocated\r\n");
+	    return -1;
+    }
+
+    uint8_t *buf = (uint8_t *)tft_line;
+
+    if (fname) {
+    	if (stat(fname, &sb) != 0) {
+			printf("error opening file\r\n");
+    		return -3;
+    	}
+		fhndl = fopen(fname, "r");
+		if (!fhndl) {
+			printf("error opening file\r\n");
+			return -3;
+		}
+
+		xrd = fread(buf, 1, 54, fhndl);  // read header
+    }
+    else {
+    	xrd = 0;
+    	if ((imgbuf) && (size > 54)) {
+    		memcpy(buf, imgbuf, 54);
+    		xrd = 54;
+    	}
+    }
+	if (xrd != 54) {
+exithd:
+		if (fhndl) fclose(fhndl);
+		printf("Error reading header: %d\r\n", err);
+		return -4;
+	}
+
+	uint16_t wtemp;
+	uint32_t temp;
+	uint32_t offset;
+	uint32_t xsize;
+	uint32_t ysize;
+
+	// Check image header
+	if ((buf[0] != 'B') || (buf[1] != 'M')) {err=1; goto exithd;}
+
+	memcpy(&offset, buf+10, 4);
+	memcpy(&temp, buf+14, 4);
+	if (temp != 40)  {err=2; goto exithd;}
+	memcpy(&wtemp, buf+26, 2);
+	if (wtemp != 1)  {err=3; goto exithd;}
+	memcpy(&wtemp, buf+28, 2);
+	if (wtemp != 24)  {err=4; goto exithd;}
+	memcpy(&temp, buf+30, 4);
+	if (temp != 0)  {err=5; goto exithd;}
+
+	memcpy(&xsize, buf+18, 4);
+	memcpy(&ysize, buf+22, 4);
+
+	// Adjust position
+	if (x == CENTER) x = (_width - xsize) / 2;
+	else if (x == RIGHT) x = (_width - xsize);
+	if (x < 0) x = 0;
+
+	if (y == CENTER) y = (_height - ysize) / 2;
+	else if (y == BOTTOM) y = (_height - ysize);
+	if (y < 0) y = 0;
+
+	// Crop to display width
+	int xend;
+	if ((x+xsize) > _width) xend = _width-1;
+	else xend = x+xsize-1;
+	int disp_xsize = xend-x+1;
+	if ((disp_xsize <= 1) || (y >= _height)) {
+		printf("image out of screen.\r\n");
+		goto exit;
+	}
+
+	while (ysize > 0) {
+		// Position at line start
+		// ** BMP images are stored in file from LAST to FIRST line
+		//    so we have to read from the end line first
+
+		if (fhndl) {
+			if (fseek(fhndl, offset+((ysize-1)*(xsize*3)), SEEK_SET) != 0) break;
+		}
+		else {
+			if (offset+((ysize-1)*(xsize*3)) > (size-(xsize*3))) {
+				printf("line offset error [line=%d]\r\n", ysize-1);
+				break;
+			}
+			xrd = offset+((ysize-1)*(xsize*3));
+		}
+
+		// ** read one image line from file and send to display **
+		// read only the part of image line which can be shown on screen
+		if (fhndl) xrd = fread(buf, 1, disp_xsize*3, fhndl);  // read line from file
+		else {
+			if ((xrd+(disp_xsize*3)) > size) xrd = 0;
+			else {
+				memcpy(buf, imgbuf+xrd, disp_xsize*3);
+				xrd = disp_xsize*3;
+			}
+		}
+		if (xrd != (disp_xsize*3)) {
+			printf("Error reading line: %d (%d)\r\n", y, xrd);
+			break;
+		}
+		// Convert colors BGR-888 (BMP) -> RGB-888 (DISPLAY)
+		for (i=0;i < xrd;i += 3) {
+			tmpc = buf[i+2] & 0xfc;    // save R
+			buf[i+2] = buf[i] & 0xfc;  // B -> R
+			buf[i] = tmpc;             // R -> B
+			buf[i+1] &= 0xfc;          // G
+		}
+
+		if (tft_use_trans) {
+			if (intrans) {
+				if (send_data_finish() != ESP_OK) break;
+			}
+		    if (send_data_trans(x, y, xend, y, disp_xsize, tft_line) != ESP_OK) break;
+	    	intrans = 1;
+		}
+		else send_data(x, y, xend, y, disp_xsize, tft_line);
+
+		y++;	// next image line
+		if (y >= _height) break;
+		ysize--;
+	}
+	if ((tft_use_trans) && (intrans)) send_data_finish();
+
+exit:
+	if (fhndl) fclose(fhndl);
+
+	return 0;
+}
+
+
 

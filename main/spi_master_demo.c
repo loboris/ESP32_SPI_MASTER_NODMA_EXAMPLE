@@ -30,8 +30,11 @@ extern uint8_t test3_jpg_end[] asm("_binary_test3_jpg_end");
 extern uint8_t test4_jpg_start[] asm("_binary_test4_jpg_start");
 extern uint8_t test4_jpg_end[] asm("_binary_test4_jpg_end");
 
+extern uint8_t tiger_bmp_start[] asm("_binary_tiger_bmp_start");
+extern uint8_t tiger_bmp_end[] asm("_binary_tiger_bmp_end");
+
 // Handle of the wear levelling library instance
-static wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
+//static wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
 
 // Mount path for the partition
 const char *base_path = "/spiflash";
@@ -105,7 +108,7 @@ static const uint8_t ILI9341_init[] = {
 // Init for ILI7341
 // ------------------------------------
 static const uint8_t ILI9488_init[] = {
-  16,                   					        // 16 commands in list
+  18,                   					        // 18 commands in list
   ILI9341_SWRESET, DELAY,   						//  1: Software reset, no args, w/delay
   200,												//     200 ms delay
 
@@ -148,6 +151,12 @@ static const uint8_t ILI9488_init[] = {
 
   0xE9, 1,   // Set Image Function
 	0x00,    // Disable 24 bit data
+
+  0x53, 1,   // Write CTRL Display Value
+	0x28,    // BCTRL && DD on
+
+  0x51, 1,   // Write Display Brightness Value
+	0x7F,    //
 
   0xF7, 4,   // Adjust Control
 	0xA9,
@@ -260,16 +269,17 @@ uint16_t ts_cmd(spi_nodma_device_handle_t spi, const uint8_t cmd)
 //--------------------------------------------------------------------------------------
 static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_t tsspi) 
 {
-	int max_speed = 2;
-    uint32_t speeds[3] = {8000000,16000000, 40000000};
+	int max_speed = 4;
+    uint32_t speeds[5] = {2500000,5000000,8000000,16000000, 40000000};
 
-    int speed_idx = 0, max_rdspeed=8000000;
+    int speed_idx = 0, max_rdspeed=5000000;
     uint32_t change_speed, rd_clk;
 	esp_err_t ret;
-    uint16_t line[2][_width];
+    uint8_t *line_buf;
+    uint8_t *line_rdbuf;
     int x, y, ry;
 	int line_check=0;
-	uint16_t color;
+	color_t color;
     uint32_t t1=0,t2=0,t3=0, tstart;
 	float hue_inc;
 #if USE_TOUCH
@@ -280,32 +290,39 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 	ry = rand() % (_height-1);
 	ry = rand() % (_height-1);
 
+	line_buf = malloc(_width*sizeof(color_t)+1);
+	assert(line_buf);
+	line_rdbuf = malloc(_width*sizeof(color_t)+1);
+	assert(line_rdbuf);
+	color_t *line = (color_t *)(line_buf+1);
+	color_t *rdline = (color_t *)(line_rdbuf+1);
+
 	while(1) {
 		// ===== Clear screen =====
-		color = 0x0000;
+		color = TFT_BLACK;
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
-		disp_spi_transfer_addrwin(spi, 0, _width-1, 0, _height-1);
-		disp_spi_transfer_cmd(spi, TFT_RAMWR);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _width*_height, 1);
 
-		color = 0xFFFF;
+		disp_spi_transfer_addrwin(spi, 0, _width-1, 0, _height-1);
+		disp_spi_transfer_color_rep(spi, &color, _width*_height, 1);
+
+		color = TFT_WHITE;
 		for (y=0;y<_height;y+=20) {
 			disp_spi_transfer_addrwin(spi, 0, _width-1, y, y);
-			disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _width, 1);
+			disp_spi_transfer_color_rep(spi, &color, _width, 1);
 		}
 		for (x=0;x<_width;x+=20) {
 			disp_spi_transfer_addrwin(spi, x, x, 0, _height-1);
-			disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _height, 1);
+			disp_spi_transfer_color_rep(spi, &color,  _height, 1);
 		}
 		disp_spi_transfer_addrwin(spi, 0, _width-1, _height-1, _height-1);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _width, 1);
+		disp_spi_transfer_color_rep(spi, &color,  _width, 1);
 		disp_spi_transfer_addrwin(spi, _width-1, _width-1, 0, _height-1);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _height, 1);
-		vTaskDelay(1000 / portTICK_RATE_MS);
+		disp_spi_transfer_color_rep(spi, &color,  _height, 1);
 
 		ret = spi_nodma_device_deselect(spi);
 		assert(ret==ESP_OK);
+		vTaskDelay(1000 / portTICK_RATE_MS);
 
 		// ===== Send color lines =====
 		ry = rand() % (_height-1);
@@ -316,13 +333,13 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		for (y=0; y<_height; y++) {
 			hue_inc = (float)(((float)y / (float)(_height-1) * 360.0));
             for (x=0; x<_width; x++) {
-				color = HSBtoRGB(hue_inc, 1.0, (float)(x/(float)(_width*2)) + 0.5);
-				line[0][x] = color; //(uint16_t)((color>>8) | (color & 0xFF));
+				color = HSBtoRGB(hue_inc, 1.0, (float)x / (float)_width);
+				line[x] = color;
 			}
 			disp_spi_transfer_addrwin(spi, 0, _width-1, y, y);
-			disp_spi_transfer_color_rep(spi, (uint8_t *)(line[0]),  _width, 0);
+			disp_spi_transfer_color_rep(spi, line,  _width, 0);
 #if DISPLAY_READ
-            if (y == ry) memcpy(line[1], line[0], _width*2);
+            if (y == ry) memcpy(line_rdbuf, line_buf, _width * sizeof(color_t) + 1);
 #endif
 		}
 		t1 = clock() - tstart;
@@ -338,14 +355,29 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 			rd_clk = speeds[max_rdspeed];
 		}
 		else rd_clk = speeds[speed_idx];
-		ret = disp_spi_read_data(spi, 0, ry, _width-1, ry, _width, (uint8_t *)(line[0]));
+		ret = read_data(0, ry, _width-1, ry, _width, line_buf, 0);
 		if (ret == ESP_OK) {
             //line_check = memcmp((uint8_t *)(line[0]), (uint8_t *)(line[1]), _width*2);
 			for (y=0; y<_width; y++) {
-				if (line[0][y] != line[1][y]) {
+				if (compare_colors(line[y], rdline[y])) {
 					line_check = y+1;
 					break;
 				}
+			}
+			if (line_check) {
+				for (y=1;y < 37;y+=3) {
+					printf("(%02x,%02x,%02x) ", line_buf[y], line_buf[y+1], line_buf[y+2]);
+				}
+				printf("\r\n");
+				for (y=1;y < 37;y+=3) {
+					printf("(%02x,%02x,%02x) ", line_rdbuf[y], line_rdbuf[y+1], line_rdbuf[y+2]);
+				}
+				printf("\r\n");
+				for (x=0;x<13;x++) {
+					color = readPixel(x, ry, 0);
+					printf("(%02x,%02x,%02x) ", color.r, color.g, color.b);
+				}
+				printf("\r\n");
 			}
         }
 		if (speed_idx > max_rdspeed) {
@@ -382,7 +414,7 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 
 		// ===== Display pixels =====
 		uint8_t clidx = 0;
-		color = 0xF800;
+		color = TFT_RED;
 		tstart = clock();
 		ret = spi_nodma_device_select(spi, 0);
 		assert(ret==ESP_OK);
@@ -394,12 +426,12 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 				clidx++;
 				if (clidx > 5) clidx = 0;
 
-				if (clidx == 0) color = 0xF800;
-				else if (clidx == 1) color = 0x07E0;
-				else if (clidx == 2) color = 0x001F;
-				else if (clidx == 3) color = 0xFFE0;
-				else if (clidx == 4) color = 0xF81F;
-				else color = 0x07FF;
+				if (clidx == 0) color = TFT_RED;
+				else if (clidx == 1) color = TFT_GREEN;
+				else if (clidx == 2) color = TFT_BLUE;
+				else if (clidx == 3) color = TFT_YELLOW;
+				else if (clidx == 4) color = TFT_CYAN;
+				else color = TFT_PURPLE;
 			}
 		}
 		ret = spi_nodma_device_deselect(spi);
@@ -410,14 +442,8 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 		// ===== Clear screen with color =====
 		color = TFT_BLUE;
 		tstart = clock();
-		ret = spi_nodma_device_select(spi, 0);
-		assert(ret==ESP_OK);
-		disp_spi_transfer_addrwin(spi, 0, _width-1, 0, _height-1);
-		disp_spi_transfer_cmd(spi, TFT_RAMWR);
-		disp_spi_transfer_color_rep(spi, (uint8_t *)&color,  _width*_height, 1);
+		TFT_pushColorRep(0, _width-1, 0, _height-1, color, _width*_height);
 		t3 = clock() - tstart;
-		ret = spi_nodma_device_deselect(spi);
-		assert(ret==ESP_OK);
 		vTaskDelay(1000 / portTICK_RATE_MS);
 
 #if USE_TOUCH
@@ -458,64 +484,104 @@ static void display_test(spi_nodma_device_handle_t spi, spi_nodma_device_handle_
 
 		// Change SPI speed
 		speed_idx++;
-		if (speed_idx > max_speed) return;
+		if (speed_idx > max_speed) break;
 
 		change_speed = spi_nodma_set_speed(spi, speeds[speed_idx]);
 		assert(change_speed > 0 );
     }
+	free(line_rdbuf);
+	free(line_buf);
 }
 
-// Assumes 0 <= max <= RAND_MAX
-// Returns in the closed interval [0, max]
 //-----------------------------
-long random_at_most(long max) {
-  unsigned long
-    // max <= RAND_MAX < ULONG_MAX, so this is okay.
-    num_bins = (unsigned long) max + 1,
-    num_rand = (unsigned long) RAND_MAX + 1,
-    bin_size = num_rand / num_bins,
-    defect   = num_rand % num_bins;
+static color_t random_color() {
 
-  long x;
-  do {
-   x = rand();
-  }
-  // This is carefully written not to overflow
-  while (num_rand - defect <= (unsigned long)x);
-
-  // Truncated division is intentional
-  x /= bin_size;
-  if (x == 0) x = (0x18 | 0x06 | 0x03);
-  return x;
+	color_t color;
+	color.r  = (uint8_t)(rand() % 255);
+	color.g  = (uint8_t)(rand() % 255);
+	color.b  = (uint8_t)(rand() % 255);
+	return color;
 }
+
+static int _img_pass = 0;
 
 //------------------
 void disp_images() {
+	uint32_t tstart;
+/*
+	tstart = clock();
+	disp_spi_transfer_color_rep_trans(0, 0, _width-1, _height-1, TFT_BLUE, (uint32_t)(_height*_width));
+	tstart = clock() - tstart;
+	if (_img_pass == 0) printf("Clear screen time (TRANS): %u ms\r\n", tstart);
+	vTaskDelay(500 / portTICK_RATE_MS);
+*/
+	tstart = clock();
 	TFT_fillScreen(TFT_BLACK);
-	tft_jpg_image(1, 0, 1, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
+	tstart = clock() - tstart;
+	if (_img_pass == 0) printf("Clear screen time: %u ms\r\n", tstart);
+
+	tft_jpg_image(0, 0, 1, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
 	vTaskDelay(500 / portTICK_RATE_MS);
 	tft_jpg_image(_width/2, 0, 1, NULL, test2_jpg_start, test2_jpg_end-test2_jpg_start);
 	vTaskDelay(500 / portTICK_RATE_MS);
-	tft_jpg_image(1, _height/2, 1, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
+	tft_jpg_image(0, _height/2, 1, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
 	vTaskDelay(500 / portTICK_RATE_MS);
 	tft_jpg_image(_width/2, _height/2, 1, NULL, test4_jpg_start, test4_jpg_end-test4_jpg_start);
 	vTaskDelay(5000 / portTICK_RATE_MS);
 
-	tft_jpg_image(0, 0, 1, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
+	tft_use_trans = 0;
+	tstart = clock();
+	tft_jpg_image(0, 0, 0, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
+	tstart = clock() - tstart;
+	if (_img_pass == 0) printf("JPG Decode time (no trans): %u ms\r\n", tstart);
+	vTaskDelay(1000 / portTICK_RATE_MS);
+
+	tft_use_trans = 1;
+	tstart = clock();
+	tft_jpg_image(0, 0, 0, NULL, test1_jpg_start, test1_jpg_end-test1_jpg_start);
+	tstart = clock() - tstart;
+	if (_img_pass == 0) printf("JPG Decode time (trans): %u ms\r\n", tstart);
+	vTaskDelay(1000 / portTICK_RATE_MS);
+
+	tft_jpg_image(0, 0, 0, NULL, test2_jpg_start, test2_jpg_end-test2_jpg_start);
 	vTaskDelay(2000 / portTICK_RATE_MS);
-	tft_jpg_image(0, 0, 1, NULL, test2_jpg_start, test2_jpg_end-test2_jpg_start);
+	tft_jpg_image(0, 0, 0, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
 	vTaskDelay(2000 / portTICK_RATE_MS);
-	tft_jpg_image(0, 0, 1, NULL, test3_jpg_start, test3_jpg_end-test3_jpg_start);
-	vTaskDelay(2000 / portTICK_RATE_MS);
-	tft_jpg_image(0, 0, 1, NULL, test4_jpg_start, test4_jpg_end-test4_jpg_start);
+	tft_jpg_image(0, 0, 0, NULL, test4_jpg_start, test4_jpg_end-test4_jpg_start);
 
 	_fg = TFT_BLACK;
 	TFT_setFont(TOONEY32_FONT, NULL);
 	_transparent = 1;
-	TFT_print("JPG IMAGES", 150, _height-40);
-	TFT_print("JPG IMAGES", 151, _height-39);
+
+	TFT_print("JPG IMAGE", 150, _height-40);
+	_fg = TFT_CYAN;
+	TFT_print("JPG IMAGE", 152, _height-38);
+	vTaskDelay(5000 / portTICK_RATE_MS);
+
+	tft_use_trans = 1;
+	tstart = clock();
+	tft_bmp_image(0, 0, NULL, tiger_bmp_start, tiger_bmp_end-tiger_bmp_start);
+	tstart = clock() - tstart;
+	if (_img_pass == 0) printf("BMP Decode time (trans): %u ms\r\n", tstart);
+	vTaskDelay(2000 / portTICK_RATE_MS);
+
+	tft_use_trans = 0;
+	tstart = clock();
+	tft_bmp_image(0, 0, NULL, tiger_bmp_start, tiger_bmp_end-tiger_bmp_start);
+	tstart = clock() - tstart;
+	if (_img_pass == 0) printf("BMP Decode time (no trans): %u ms\r\n", tstart);
+	vTaskDelay(2000 / portTICK_RATE_MS);
+
+
+	_fg = TFT_BLACK;
+	TFT_print("BMP IMAGE", 150, _height-40);
+	_fg = TFT_CYAN;
+	TFT_print("BMP IMAGE", 152, _height-38);
+
 	_transparent = 0;
 	vTaskDelay(5000 / portTICK_RATE_MS);
+
+	_img_pass++;
 }
 
 //-----------------
@@ -528,34 +594,34 @@ void disp_frame() {
 
 //----------------
 void disp_text() {
-	_fg = random_at_most(65565);
+	_fg = random_color();
 	TFT_setFont(DEFAULT_FONT, NULL);
 	TFT_print("Hi from ESP32 spi_master_nodma driver", 70, 6);
 
-	_fg = random_at_most(65565);
+	_fg = random_color();
 	TFT_setFont(DEFAULT_FONT, NULL);
 	rotation = 270;
 	TFT_print("Rotated text 270 deg", 6, _height-70);
 	rotation = 90;
-	_fg = random_at_most(65565);
+	_fg = random_color();
 	TFT_print("Rotated text 90 deg", _width-12, 80);
 	rotation = 0;
 
-	_fg = random_at_most(65565);
+	_fg = random_color();
 	TFT_setFont(COMIC24_FONT, NULL);
 	TFT_print("ESP32 ", CENTER, 100);
 
-	_fg = random_at_most(65565);
+	_fg = random_color();
 	TFT_setFont(DEJAVU18_FONT, NULL);
 	TFT_print("2.4 GHz Wi-Fi and Bluetooth combo chip", CENTER, 130);
 
 	TFT_setFont(TOONEY32_FONT, NULL);
-	_fg = random_at_most(65565);
+	_fg = random_color();
 	TFT_print("Welcome to ESP32", CENTER, CENTER);
 
 	TFT_setFont(FONT_7SEG, NULL);
 	_fg = TFT_BLUE;
-	set_font_atrib(14, 3, 1, 0x0010);
+	set_font_atrib(14, 3, 1, (color_t){0,0,128});
 }
 
 //===============
@@ -567,7 +633,7 @@ void tft_test() {
 	_forceFixed = 0;
 	tft_resetclipwin();
 
-	uint16_t color=0, fill=0;
+	color_t color = TFT_BLACK, fill = TFT_BLACK;
 	struct tm* tm_info;
     char buffer[16];
 	time_t now;
@@ -583,13 +649,13 @@ void tft_test() {
 		tm_info = localtime(&now);
 
 		if ((clock() * portTICK_RATE_MS) > nn ) {
-			nn = (clock() * portTICK_RATE_MS) + 90000;
+			nn = (clock() * portTICK_RATE_MS) + 60000;
 			disp_images();
 			disp_frame();
 			disp_text();
 		}
 
-		if ((rpos % 50) == 0) color = random_at_most(65565);
+		if ((rpos % 50) == 0) color = random_color();
 		TFT_fillRect(rpos, 34, 16, 16, TFT_BLACK);
 		if (xdir == 0) {
 			rpos++;
@@ -611,23 +677,23 @@ void tft_test() {
 			nsec = tm_info->tm_sec;
 			disp_text();
 
-			color = random_at_most(65565);
-			fill = random_at_most(65565);
+			color = random_color();
+			fill = random_color();
 			TFT_fillCircle(50,50,30, fill);
 			TFT_drawCircle(50,50,30, color);
 
-			color = random_at_most(65565);
-			fill = random_at_most(65565);
+			color = random_color();
+			fill = random_color();
 			TFT_fillCircle(50,_height-50,30, fill);
 			TFT_drawCircle(50,_height-50,30, color);
 
-			color = random_at_most(65565);
-			fill = random_at_most(65565);
+			color = random_color();
+			fill = random_color();
 			TFT_fillCircle(_width-50,50,30, fill);
 			TFT_drawCircle(_width-50,50,30, color);
 
-			color = random_at_most(65565);
-			fill = random_at_most(65565);
+			color = random_color();
+			fill = random_color();
 			TFT_fillCircle(_width-50,_height-50,30, fill);
 			TFT_drawCircle(_width-50,_height-50,30, color);
 
@@ -707,7 +773,7 @@ void app_main()
 	ret = initfs();
     assert(ret==ESP_OK);
     */
-	tft_line = malloc(TFT_LINEBUF_MAX_SIZE*2);
+	tft_line = malloc(TFT_LINEBUF_MAX_SIZE*3+128);
 
 	gpio_set_direction(PIN_NUM_MISO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(PIN_NUM_MISO, GPIO_PULLUP_ONLY);
@@ -723,7 +789,7 @@ void app_main()
         .quadhd_io_num=-1
     };
     spi_nodma_device_interface_config_t devcfg={
-        .clock_speed_hz=8000000,                //Initial clock out at 8 MHz
+        .clock_speed_hz=2500000,                //Initial clock out at 2.5 MHz
         .mode=0,                                //SPI mode 0
         .spics_io_num=-1,                       //we will use external CS pin
 		.spics_ext_io_num=PIN_NUM_CS,           //external CS pin
@@ -731,6 +797,7 @@ void app_main()
 												// but we don't need full duplex in  this example
 		// We can use pre_cb callback to activate DC, but we are handling DC in low-level functions, so it is not necessary
         //.pre_cb=ili_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
+		.queue_size = 2,
     };
 
 #if USE_TOUCH
@@ -785,7 +852,7 @@ void app_main()
 	printf("OK\r\n");
 	vTaskDelay(500 / portTICK_RATE_MS);
 	
-	display_test(spi, tsspi);
+	//display_test(spi, tsspi);
 
 	spi_nodma_set_speed(spi, 40000000);
 

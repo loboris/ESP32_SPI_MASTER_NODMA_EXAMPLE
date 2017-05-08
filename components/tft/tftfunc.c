@@ -11,13 +11,16 @@
 
 // ### set it to 16 for ILI9341; 24 for ILI9488 ###
 
-uint16_t *tft_line = NULL;
+uint8_t tft_use_trans = 0;
+
+color_t *tft_line = NULL;
 uint16_t _width = 320;
 uint16_t _height = 240;
 
 spi_nodma_device_handle_t disp_spi = NULL;
 spi_nodma_device_handle_t ts_spi = NULL;
 
+static spi_nodma_transaction_t tft_trans;
 
 // Start spi bus transfer of given number of bits
 //----------------------------------------------------------------------------------
@@ -150,8 +153,8 @@ void IRAM_ATTR disp_spi_transfer_addrwin(spi_nodma_device_handle_t handle, uint1
 }
 
 // Set one display pixel to given color, address window already set
-//----------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_t color) {
+//---------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, color_t color) {
 	uint32_t wd;
 
 	// Wait for SPI bus ready
@@ -159,15 +162,14 @@ void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_
 	disp_spi_transfer_cmd(handle, TFT_RAMWR);
 
 #if (COLOR_BITS == 16)
-    wd = (uint32_t)(color >> 8);
-    wd |= (uint32_t)(color & 0xff) << 8;
+    wd = (uint32_t)(color.r & 0xF8);
+    wd |= (uint32_t)(color.g & 0xE0) << 3;
+    wd |= (uint32_t)(color.g & 0x1C) << 11;
+    wd |= (uint32_t)(color.b & 0xF8) << 5;
 #else
-    uint8_t r = (((color & 0xF800) >> 11) * 255) / 31;
-    uint8_t g = (((color & 0x07E0) >> 5) * 255) / 63;
-    uint8_t b = ((color & 0x001F) * 255) / 31;
-    wd = r;
-    wd |= (uint32_t)(g) << 8;
-    wd |= (uint32_t)(b) << 16;
+    wd = (uint32_t)color.r;
+    wd |= (uint32_t)color.g << 8;
+    wd |= (uint32_t)color.b << 16;
 #endif
 
     // Set DC to 1 (data mode);
@@ -180,8 +182,8 @@ void IRAM_ATTR disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, uint16_
 }
 
 // Set one display pixel at given coordinates to given color
-//-----------------------------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, uint16_t y, uint16_t color) {
+//----------------------------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, uint16_t y, color_t color) {
 	disp_spi_transfer_addrwin(handle, x, x+1, y, y+1);
 	disp_spi_transfer_pixel(handle, color);
 }
@@ -190,62 +192,50 @@ void IRAM_ATTR disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, 
 // If rep==false send 'len' color data from color buffer to display
 // address window must be already set
 //---------------------------------------------------------------------------------------------------------------------
-void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uint8_t *color, uint32_t len, uint8_t rep)
+void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, color_t *color, uint32_t len, uint8_t rep)
 {
-	uint8_t idx = 0;
-	uint32_t count = 0;
-	uint32_t wd = 0;
-	uint32_t bits = 0;
-    uint8_t wbits = 0;
-#if (COLOR_BITS == 24)
-    uint8_t red=0, green=0, blue=0;
-    uint16_t clr = 0;
-#endif
+	uint32_t count = 0;	// sent color counter
+	uint32_t cidx=0;	// color buffer index
+	uint32_t wd = 0;	// used to place color data to 32-bit register in hw spi buffer
 
 	// Wait for SPI bus ready
 	while (handle->host->hw->cmd.usr);
 
+	// RAM write command
 	disp_spi_transfer_cmd(handle, TFT_RAMWR);
 
 	// Set DC to 1 (data mode);
 	gpio_set_level(PIN_NUM_DC, 1);
 
-#if (COLOR_BITS == 24)
-    if (rep) {
-        // prepare color data for ILI9844 in repeat color mode
-        clr = (uint16_t)color[0] | ((uint16_t)color[1] << 8);
-        red = (((clr & 0xF800) >> 11) * 255) / 31;
-        green = (((clr & 0x07E0) >> 5) * 255) / 63;
-        blue = ((clr & 0x001F) * 255) / 31;
-    }
-#endif
-
-    while (count < len) {
-        // ** Check if we have enough bits in spi buffer for the next color
-    	if ((bits + COLOR_BITS) > 512) {
-    	    if (wbits) handle->host->hw->data_buf[idx] = wd;
-    		// ** SPI buffer full, send data
-			disp_spi_transfer_start(handle, bits);
-    		// Wait for SPI bus ready
-    		while (handle->host->hw->cmd.usr);
-
-			bits = 0;
-            wbits = 0;
-			idx = 0;
-    	}
-
-    	// ==== Push color data to spi buffer ====
+	spi_nodma_host_t *host = handle->host;
+	host->hw->user.usr_mosi_highpart = 0;
+	host->hw->user.usr_mosi = 1;
 #if (COLOR_BITS == 16)
-    	if (rep) {
-			// get color data from color pointer
-			wd |= (uint32_t)color[1];
-			wd |= (uint32_t)color[0] << 8;
-		}
-		else {
-			// get color data from buffer
-			wd |= (uint32_t)color[count<<1];
-			wd |= (uint32_t)color[(count<<1)+1] << 8;
-		}
+	host->hw->mosi_dlen.usr_mosi_dbitlen = 15;
+#else
+	host->hw->mosi_dlen.usr_mosi_dbitlen = 23;
+#endif
+	if (handle->cfg.flags & SPI_DEVICE_HALFDUPLEX) {
+		host->hw->miso_dlen.usr_miso_dbitlen = 0;
+		host->hw->user.usr_miso = 0;
+	}
+	else {
+#if (COLOR_BITS == 16)
+		host->hw->miso_dlen.usr_miso_dbitlen = 15;
+#else
+		host->hw->miso_dlen.usr_miso_dbitlen = 23;
+#endif
+		host->hw->user.usr_miso = 1;
+	}
+
+	while (count < len) {
+    	// ==== Push color data to spi buffer ====
+		// ** Get color data from color buffer **
+#if (COLOR_BITS == 16)
+		wd |= (uint32_t)((color[cidx].r & 0xF8) << wbits);
+		wd |= (uint32_t)(color[cidx].g & 0xE0) << (wbits+3);
+		wd |= (uint32_t)(color[cidx].g & 0x1C) << (wbits+11);
+		wd |= (uint32_t)(color[cidx].b & 0xF8) << (wbits+5);
 		wbits += 16;
         if (wbits == 32) {
             handle->host->hw->data_buf[idx] = wd;
@@ -254,100 +244,25 @@ void IRAM_ATTR disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, uin
             idx++;
         }
 #else
-		if (rep == 0) {
-			clr = (uint16_t)color[(count<<1)+1] | ((uint16_t)color[(count<<1)] << 8);
-			red = (((clr & 0xF800) >> 11) * 255) / 31;
-			green = (((clr & 0x07E0) >> 5) * 255) / 63;
-			blue = ((clr & 0x001F) * 255) / 31;
-		}
-		wd |= (uint32_t)(red) << wbits;
-		wbits += 8;
-		if (wbits == 32) {
-			handle->host->hw->data_buf[idx] = wd;
-			wd = 0;
-			wbits = 0;
-			idx++;
-		}
-		wd |= (uint32_t)(green) << wbits;
-		wbits += 8;
-		if (wbits == 32) {
-			handle->host->hw->data_buf[idx] = wd;
-			wd = 0;
-			wbits = 0;
-			idx++;
-		}
-		wd |= (uint32_t)(blue) << wbits;
-		wbits += 8;
-		if (wbits == 32) {
-			handle->host->hw->data_buf[idx] = wd;
-			wd = 0;
-			wbits = 0;
-			idx++;
-		}
+		wd = (uint32_t)(color[cidx].r & 0xFC);
+		wd |= (uint32_t)(color[cidx].g & 0xFC) << 8;
+		wd |= (uint32_t)(color[cidx].b & 0xFC) << 16;
+		handle->host->hw->data_buf[0] = wd;
+		// Start transfer
+		host->hw->cmd.usr = 1;
+		// Wait for SPI bus ready
+		while (handle->host->hw->cmd.usr);
 #endif
-        // Increment color & bits counters
+        // Increment color buffer index if not repeating color
+        if (rep == 0) cidx++;
+        // Increment sent colors counter
     	count++;
-    	bits += COLOR_BITS;
-    	if (count == len) break;
     }
-    if (wbits) {
-        handle->host->hw->data_buf[idx] = wd;
-    }
-
-    if (bits > 0) disp_spi_transfer_start(handle, bits);
-	// Wait for SPI bus ready
-	while (handle->host->hw->cmd.usr);
-}
-
-// Reads pixels/colors from the TFT's GRAM
-//-----------------------------------------------------------------------------------------------------------------------
-int IRAM_ATTR disp_spi_read_data(spi_nodma_device_handle_t handle, int x1, int y1, int x2, int y2, int len, uint8_t *buf)
-{
-	memset(buf, 0, len*2);
-
-	uint8_t *rbuf = malloc((len*3)+1);
-    if (!rbuf) return -1;
-
-    memset(rbuf, 0, (len*3)+1);
-
-    // ** Send address window **
-	disp_spi_transfer_addrwin(handle, x1, x2, y1, y2);
-
-    // ** GET pixels/colors **
-	disp_spi_transfer_cmd(handle, TFT_RAMRD);
-
-	// Receive data
-    esp_err_t ret;
-    // Set DC to 1 (data mode);
-	gpio_set_level(PIN_NUM_DC, 1);
-
-	spi_nodma_transaction_t t;
-    memset(&t, 0, sizeof(t));  //Zero out the transaction
-    t.length=0;                //Send notning
-    t.tx_buffer=NULL;
-    t.rxlength=8*((len*3)+1);  //Receive size in bits
-    t.rx_buffer=rbuf;
-    //t.user=(void*)1;         //D/C needs to be set to 1
-
-	ret = spi_nodma_transfer_data(handle, &t); // Transmit using direct mode
-
-	if (ret == ESP_OK) {
-		int idx = 0;
-		uint16_t color;
-		for (int i=1; i<(len*3); i+=3) {
-			color = (uint16_t)((uint16_t)((rbuf[i] & 0xF8) << 8) | (uint16_t)((rbuf[i+1] & 0xFC) << 3) | (uint16_t)(rbuf[i+2] >> 3));
-			buf[idx++] = color >> 8;
-			buf[idx++] = color & 0xFF;
-		}
-	}
-    free(rbuf);
-
-    return ret;
 }
 
 // Draw pixel on TFT on x,y position using given color
-//-------------------------------------------------------------------------
-void IRAM_ATTR drawPixel(int16_t x, int16_t y, uint16_t color, uint8_t sel)
+//------------------------------------------------------------------------
+void IRAM_ATTR drawPixel(int16_t x, int16_t y, color_t color, uint8_t sel)
 {
 	if (sel) {
 		if (spi_nodma_device_select(disp_spi, 0)) return;
@@ -361,88 +276,137 @@ void IRAM_ATTR drawPixel(int16_t x, int16_t y, uint16_t color, uint8_t sel)
 	taskENABLE_INTERRUPTS();
 }
 
-// Write 'len' 16-bit color data to TFT 'window' (x1,y2),(x2,y2)
-// uses the buffer to fill the color values
-//-------------------------------------------------------------------------------------------
-void IRAM_ATTR TFT_pushColorRep(int x1, int y1, int x2, int y2, uint16_t color, uint32_t len)
-{
-	uint16_t ccolor = color;
-	if (spi_nodma_device_select(disp_spi, 0)) return;
-	//vTaskSuspendAll ();
-
-	// ** Send address window **
-	disp_spi_transfer_addrwin(disp_spi, x1, x2, y1, y2);
-
-	// ** Send repeated pixel color **
-	disp_spi_transfer_color_rep(disp_spi, (uint8_t *)&ccolor, len, 1);
-
-	spi_nodma_device_deselect(disp_spi);
-    //xTaskResumeAll ();
-}
-
-// Write 'len' 16-bit color data to TFT 'window' (x1,y2),(x2,y2) from given buffer
-//-----------------------------------------------------------------------------------
-void IRAM_ATTR send_data(int x1, int y1, int x2, int y2, uint32_t len, uint16_t *buf)
+// Write 'len' color data to TFT 'window' (x1,y2),(x2,y2) from given buffer
+//----------------------------------------------------------------------------------
+void IRAM_ATTR send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *buf)
 {
 	if (spi_nodma_device_select(disp_spi, 0)) return;
-	//vTaskSuspendAll ();
 
 	// ** Send address window **
 	disp_spi_transfer_addrwin(disp_spi, x1, x2, y1, y2);
 
 	// ** Send pixel buffer **
-	disp_spi_transfer_color_rep(disp_spi, (uint8_t *)buf, len, 0);
+	disp_spi_transfer_color_rep(disp_spi, buf, len, 0);
 
 	spi_nodma_device_deselect(disp_spi);
-    //xTaskResumeAll ();
 }
 
-// Reads one pixel/color from the TFT's GRAM
-//--------------------------------------
-uint16_t readPixel(int16_t x, int16_t y)
+// ** Send color data using transaction mode **
+//---------------------------------------------------------------------------------------------
+esp_err_t IRAM_ATTR send_data_trans(int x1, int y1, int x2, int y2, uint32_t len, color_t *buf)
 {
-	uint8_t inbuf[4] = {0};
-	spi_nodma_transaction_t t;
-    memset(&t, 0, sizeof(t));  //Zero out the transaction
-
-	if (spi_nodma_device_select(disp_spi, 0)) return 0;
-	taskDISABLE_INTERRUPTS();
+	if (spi_nodma_device_select(disp_spi, 0)) return ESP_ERR_INVALID_STATE;
+	//vTaskSuspendAll ();
 
 	// ** Send address window **
-	disp_spi_transfer_addrwin(disp_spi, x, x+1, y, y+1);
+	disp_spi_transfer_addrwin(disp_spi, x1, x2, y1, y2);
 
-    // ** GET pixel color **
-	disp_spi_transfer_cmd(disp_spi, TFT_RAMRD);
+	// ** RAM write command
+	// Set DC to 0 (command mode);
+    gpio_set_level(PIN_NUM_DC, 0);
 
-    t.length=0;                //Send nothing
-    t.tx_buffer=NULL;
-    t.rxlength=8*4;  //Receive size in bits
-    t.rx_buffer=inbuf;
-    t.user = (void*)1;
+    disp_spi->host->hw->data_buf[0] = (uint32_t)TFT_RAMWR;
+    disp_spi_transfer_start(disp_spi, 8);
 
-	spi_nodma_transfer_data(disp_spi, &t); // Transmit using direct mode
+	//Transaction descriptors
+    memset(&tft_trans, 0, sizeof(spi_nodma_transaction_t));
+
+    tft_trans.tx_buffer=buf;
+    tft_trans.length=len*3*8;  //Data length, in bits
+
+    // Wait for SPI bus ready
+	while (disp_spi->host->hw->cmd.usr);
+    // Set DC to 1 (data mode);
+	gpio_set_level(PIN_NUM_DC, 1);
+
+    //Queue transaction.
+    return spi_device_queue_trans(disp_spi, &tft_trans, 1000*portTICK_RATE_MS);
+}
+
+// ** Send color data using transaction mode **
+//-----------------------------------------------------------------------------------------------------------
+void IRAM_ATTR disp_spi_transfer_color_rep_trans(int x1, int y1, int x2, int y2, color_t color, uint32_t len)
+{
+	if (spi_nodma_device_select(disp_spi, 0)) return;
+	//vTaskSuspendAll ();
+
+    spi_nodma_transaction_t *rtrans;
+
+    // ** Send address window **
+	disp_spi_transfer_addrwin(disp_spi, x1, x2, y1, y2);
+
+	// ** RAM write command
+	// Set DC to 0 (command mode);
+    gpio_set_level(PIN_NUM_DC, 0);
+    disp_spi->host->hw->data_buf[0] = (uint32_t)TFT_RAMWR;
+    disp_spi_transfer_start(disp_spi, 8);
+
+    uint32_t size = len;
+    if (size > TFT_LINEBUF_MAX_SIZE) size = TFT_LINEBUF_MAX_SIZE;
+    for (int i=0; i<size; i++) {
+    	tft_line[i] = color;
+    }
+
+    // Wait for SPI bus ready
+	while (disp_spi->host->hw->cmd.usr);
+	// Set DC to 1 (data mode);
+	gpio_set_level(PIN_NUM_DC, 1);
+
+	int tosend = len;
+	while (tosend > 0);{
+	    memset(&tft_trans, 0, sizeof(spi_nodma_transaction_t));
+		tft_trans.tx_buffer = (uint8_t *)tft_line;
+		tft_trans.length = size*3*8;  //Data length, in bits
+		//Queue transaction.
+		spi_device_queue_trans(disp_spi, &tft_trans, 1000*portTICK_RATE_MS);
+	    spi_device_get_trans_result(disp_spi, &rtrans, 1000*portTICK_RATE_MS);
+
+		tosend -= size;
+		size = tosend;
+	    if (size > TFT_LINEBUF_MAX_SIZE) size = TFT_LINEBUF_MAX_SIZE;
+    }
 
 	spi_nodma_device_deselect(disp_spi);
-    taskENABLE_INTERRUPTS();
+}
 
-	//printf("READ DATA: [%02x, %02x, %02x, %02x]\r\n", inbuf[0],inbuf[1],inbuf[2],inbuf[3]);
-    return (uint16_t)((uint16_t)((inbuf[1] & 0xF8) << 8) | (uint16_t)((inbuf[2] & 0xFC) << 3) | (uint16_t)(inbuf[3] >> 3));
+//------------------------------------
+esp_err_t IRAM_ATTR send_data_finish()
+{
+    spi_nodma_transaction_t *rtrans;
+    // Wait for transaction to be done
+    esp_err_t ret = spi_device_get_trans_result(disp_spi, &rtrans, 1000*portTICK_RATE_MS);
+	spi_nodma_device_deselect(disp_spi);
+	return ret;
+}
+
+
+// Write 'len' 16-bit color data to TFT 'window' (x1,y2),(x2,y2)
+// uses the buffer to fill the color values
+//-------------------------------------------------------------------------------------------
+void IRAM_ATTR TFT_pushColorRep(int x1, int y1, int x2, int y2, color_t color, uint32_t len)
+{
+	if (spi_nodma_device_select(disp_spi, 0)) return;
+
+	// ** Send address window **
+	disp_spi_transfer_addrwin(disp_spi, x1, x2, y1, y2);
+
+	// ** Send repeated pixel color **
+	disp_spi_transfer_color_rep(disp_spi, &color, len, 1);
+
+	spi_nodma_device_deselect(disp_spi);
 }
 
 // Reads pixels/colors from the TFT's GRAM
-//------------------------------------------------------------------
-int read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf)
+//-----------------------------------------------------------------------------------------
+int IRAM_ATTR read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf, uint8_t sel)
 {
 	spi_nodma_transaction_t t;
     memset(&t, 0, sizeof(t));  //Zero out the transaction
-	memset(buf, 0, len*2);
+	memset(buf, 0, len*sizeof(color_t));
 
-	uint8_t *rbuf = malloc((len*3)+1);
-    if (!rbuf) return -1;
-
-    memset(rbuf, 0, (len*3)+1);
-
-	if (spi_nodma_device_select(disp_spi, 0)) return -2;
+	if (sel) {
+		if (spi_nodma_device_select(disp_spi, 0)) return -2;
+	}
 	//vTaskSuspendAll ();
 
     // ** Send address window **
@@ -454,24 +418,28 @@ int read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf)
     t.length=0;                //Send nothing
     t.tx_buffer=NULL;
     t.rxlength=8*((len*3)+1);  //Receive size in bits
-    t.rx_buffer=rbuf;
+    t.rx_buffer=buf;
     t.user = (void*)1;
 
 	spi_nodma_transfer_data(disp_spi, &t); // Transmit using direct mode
 
-	spi_nodma_device_deselect(disp_spi);
+	if (sel) spi_nodma_device_deselect(disp_spi);
     //xTaskResumeAll ();
 
-    int idx = 0;
-    uint16_t color;
-    for (int i=1; i<(len*3); i+=3) {
-    	color = (uint16_t)((uint16_t)((rbuf[i] & 0xF8) << 8) | (uint16_t)((rbuf[i+1] & 0xFC) << 3) | (uint16_t)(rbuf[i+2] >> 3));
-    	buf[idx++] = color >> 8;
-    	buf[idx++] = color & 0xFF;
-    }
-    free(rbuf);
-
     return 0;
+}
+
+// Reads one pixel/color from the TFT's GRAM
+//------------------------------------------------------------
+color_t IRAM_ATTR readPixel(int16_t x, int16_t y, uint8_t sel)
+{
+    uint8_t color_buf[sizeof(color_t)+1] = {0};
+	read_data(x, y, x+1, y+1, 1, color_buf, sel);
+	color_t color;
+	color.r = color_buf[1];
+	color.g = color_buf[2];
+	color.b = color_buf[3];
+	return color;
 }
 
 //---------------------------------------------

@@ -21,6 +21,10 @@
 #include "freertos/semphr.h"
 #include "soc/spi_struct.h"
 
+#include "esp_intr.h"
+#include "esp_intr_alloc.h"
+#include "rom/lldesc.h"
+
 
 #ifdef __cplusplus
 extern "C"
@@ -82,6 +86,7 @@ typedef struct {
     int spics_io_num;               ///< CS GPIO pin for this device, handled by hardware; set to -1 if not used
     int spics_ext_io_num;           ///< CS GPIO pin for this device, handled by software (spi_nodma_device_select/spi_nodma_device_deselect); only used if spics_io_num=-1
     uint32_t flags;                 ///< Bitwise OR of SPI_DEVICE_* flags
+    int queue_size;                 ///< Transaction queue size. This sets how many transactions can be 'in the air' (queued using spi_device_queue_trans but not yet finished using spi_device_get_trans_result) at the same time
     transaction_cb_t pre_cb;        ///< Callback to be called before a transmission is started. This callback from 'spi_nodma_transfer_data' function.
     transaction_cb_t post_cb;       ///< Callback to be called after a transmission has completed. This callback from 'spi_nodma_transfer_data' function.
     uint8_t selected;               ///< **INTERNAL** 1 if the device's CS pin is active
@@ -122,14 +127,19 @@ typedef struct spi_nodma_device_t spi_nodma_device_t;
 
 typedef struct {
     spi_nodma_device_t *device[NO_DEV];
+    intr_handle_t intr;
     spi_dev_t *hw;
+    spi_nodma_transaction_t *cur_trans;
     int cur_device;
+    lldesc_t dmadesc_tx, dmadesc_rx;
     bool no_gpio_matrix;
     QueueHandle_t spi_nodma_bus_mutex;
     spi_nodma_bus_config_t cur_bus_config;
 } spi_nodma_host_t;
 
 struct spi_nodma_device_t {
+    QueueHandle_t trans_queue;
+    QueueHandle_t ret_queue;
     spi_nodma_device_interface_config_t cfg;
     spi_nodma_host_t *host;
     spi_nodma_bus_config_t bus_config;
@@ -284,6 +294,58 @@ void spi_nodma_get_native_pins(int host, int *sdi, int *sdo, int *sck);
  *
  */
 esp_err_t spi_nodma_transfer_data(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans);
+
+
+/**
+ * @brief Queue a SPI transaction for execution
+ *
+ * @param handle Device handle obtained using spi_host_add_dev
+ * @param trans_desc Description of transaction to execute
+ * @param ticks_to_wait Ticks to wait until there's room in the queue; use portMAX_DELAY to
+ *                      never time out.
+ * @return
+ *         - ESP_ERR_INVALID_ARG   if parameter is invalid
+ *         - ESP_OK                on success
+ */
+esp_err_t spi_device_queue_trans(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans_desc, TickType_t ticks_to_wait);
+
+
+/**
+ * @brief Get the result of a SPI transaction queued earlier
+ *
+ * This routine will wait until a transaction to the given device (queued earlier with
+ * spi_device_queue_trans) has succesfully completed. It will then return the description of the
+ * completed transaction so software can inspect the result and e.g. free the memory or
+ * re-use the buffers.
+ *
+ * @param handle Device handle obtained using spi_host_add_dev
+ * @param trans_desc Pointer to variable able to contain a pointer to the description of the
+ *                   transaction that is executed
+ * @param ticks_to_wait Ticks to wait until there's a returned item; use portMAX_DELAY to never time
+                        out.
+ * @return
+ *         - ESP_ERR_INVALID_ARG   if parameter is invalid
+ *         - ESP_OK                on success
+ */
+esp_err_t spi_device_get_trans_result(spi_nodma_device_handle_t handle, spi_nodma_transaction_t **trans_desc, TickType_t ticks_to_wait);
+
+
+/**
+ * @brief Do a SPI transaction
+ *
+ * Essentially does the same as spi_device_queue_trans followed by spi_device_get_trans_result. Do
+ * not use this when there is still a transaction queued that hasn't been finalized
+ * using spi_device_get_trans_result.
+ *
+ * @param handle Device handle obtained using spi_host_add_dev
+ * @param trans_desc Pointer to variable able to contain a pointer to the description of the
+ *                   transaction that is executed
+ * @return
+ *         - ESP_ERR_INVALID_ARG   if parameter is invalid
+ *         - ESP_OK                on success
+ */
+esp_err_t spi_device_transmit(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans_desc);
+
 
 
 #ifdef __cplusplus

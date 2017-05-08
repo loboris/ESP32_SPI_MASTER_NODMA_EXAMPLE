@@ -17,6 +17,12 @@ GPATH
 .#*
 \#*#
 
+sdkconfig
+sdkconfig.old
+sdkconfig.lobo
+.cproject
+.project
+BUILD
 build/
 temp/
 local/
