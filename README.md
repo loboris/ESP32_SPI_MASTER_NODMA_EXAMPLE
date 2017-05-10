@@ -5,6 +5,8 @@
 
 Based on esp-idf **spi_master** driver, modified by **LoBo** [https://github.com/loboris] 06/2017
 
+The example uses **wear leveling FAT file system** and the latest **esp-idf** commit has to be used (5. May 2017 or later)
+
 ---
 
 #### Main features
@@ -50,9 +52,23 @@ In that case replace **#include "spi_master_nodma.h"** with **#include "driver/s
 
 ---
 
-#### Example: SPI Display driver
+### Example: SPI Display driver
 
-**The example is restructured, many changes are made, the dafault operating mode is now 18-bit color, as it works with both ILI9488 and ILI9341. The code is not fully tested with ILI9431 yet.**
+#### TFT display driver features
+
+* TFT library with many drawing functions and fonts is included.
+* Full support for ILI9341 & ILI9488 based TFT modules in 4-wire SPI mode.
+* 18-bit (RGB) color mode (default or 16-bit backed RGB565 color mode (only on ILI9341)
+* DMA transfer mode on some functions to improve speed
+* Grayscale mode can be selected
+* Graphics functions: drawpixel, line, linebyangle, rect, roundrect, circle, ellipse, triangle, arc, poly, star ... All shapes can be filled or not. Drawing can be limitid to clipping window.
+* Fonts: fixed width an proportional; 7 fonts embeded, unlimited number of fonts from file, 7-segment vector font with variable width/height. Proportional fonts can be used in fixed width mode.
+* String write function: on x,y possition, center, left/right/top/bottom justify. Transparent or opaque writing, optional wrapping. Writting can be limitid to clipping window.
+* Images: jpeg, bmp bitmap images.
+* Touch screen supported (with XPT2046 controllers)
+* Read from display memory supported
+
+**The code is not fully tested with ILI9431 yet.**
 
 
 To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Default pins used are:
@@ -65,9 +81,9 @@ To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Def
 
 ---
 
-**If you have ILI9488, set** `#define DISP_TYPE_ILI9488	1` in *tftfunc.h*
+**If you have ILI9488, set** `tft_disp_type = DISP_TYPE_ILI9488` in *spi_master_demo.c*
 
-**If you have ILI9341, set** `#define DISP_TYPE_ILI9341	1` in *tftfunc.h*
+**If you have ILI9341, set** `tft_disp_type = DISP_TYPE_ILI9341` in *spi_master_demo.c*
 
 **If you want to use different pins, change them in** *tftfunc.h*
 
@@ -77,20 +93,19 @@ Using *make menuconfig* **select tick rate 1000** ( → Component config → Fre
 
 ---
 
-*  This example tests accessing ILI9341 or ILI9488 based display using **spi_master_nodma** driver
-*  Basics functions are executed first and timings at several spi clock speeds are printed.
-*  Four different JPG images are shown on screen to demonstrate jpeg decoding
-*  Text and graphics are drawn on screen to demonstrate some drawing functions and text/fonts functionality
+* This example tests accessing ILI9341 or ILI9488 based display using **spi_master_nodma** driver
+* Basics functions are executed first and timings at several spi clock speeds are printed.
+* Four different JPG images are shown on screen to demonstrate jpeg decoding and scaling
+* One BMP image is shown on screen to demonstrate bmp decoding
+* Text and graphics are drawn on screen to demonstrate some drawing functions and text/fonts functionality
+* Full color mode and grayscale mode are alternated on every pass
+* On first 4 passes timings are printed for different operating modes
 
-Sending individual pixels is more than 10 times faster with this driver than when using *spi_master*
  
-Reading the display content is demonstrated by comparing random sent and read color line.
- 
-If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep the display touched until the info is printed.
+If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep the display touched until the info is printed. 
+This is active only during the first phase (Display test).
 
 ---
-
-**TFT library with many drawing functions and fonts is now included.**
 
 ![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo.jpg)
 
@@ -99,37 +114,95 @@ If Touch screen is available, reading the touch coordinates (non calibrated) is 
 **Example output:**
 
 ```
+I (1695) cpu_start: Pro cpu start user code
+I (1748) cpu_start: Starting scheduler on PRO CPU.
+I (1751) [SPI_FS]: Mounting FAT filesystem
+E (1753) [SPI_FS]: FATFS mounted
+E (1756) [SPI_FS]: JPG image found on file system
+
 ===================================
-spi_master_nodma demo, LoBo 04/2017
+spi_master_nodma demo, LoBo 05/2017
 ===================================
 
-SPI: bus initialized
+SPI: display device added to spi bus
 SPI: attached display device, speed=8000000
 SPI: bus uses native pins: true
 SPI: display init...
 OK
 -------------
  Disp clock =  8.00 MHz (requested:  8.00)
-      Lines =  1926  ms (320 lines of 480 pixels)
+      Lines =  1396  ms (320 lines of 480 pixels)
  Read check      OK, line 218
-     Pixels =  4096  ms (480x320)
-        Cls =   512  ms (480x320)
+     Pixels =  4151  ms (480x320)
+        Cls =   475  ms (480x320)
+-------------
+-------------
+ Disp clock = 10.00 MHz (requested: 10.00)
+      Lines =  1395  ms (320 lines of 480 pixels)
+ Read check      OK, line 293
+     Pixels =  3572  ms (480x320)
+        Cls =   382  ms (480x320)
 -------------
 -------------
  Disp clock = 16.00 MHz (requested: 16.00)
-      Lines =  1690  ms (320 lines of 480 pixels)
- Read check      OK, line 293
-     Pixels =  2625  ms (480x320)
-        Cls =   278  ms (480x320)
+      Lines =  1394  ms (320 lines of 480 pixels)
+ Read check      OK, line 300
+     Pixels =  2718  ms (480x320)
+        Cls =   244  ms (480x320)
 -------------
-### MAX READ SPI CLOCK = 16000000 ###
+### MAX READ SPI CLOCK set to 16.00 MHz ###
+-------------
+ Disp clock = 26.67 MHz (requested: 30.00)
+      Lines =  1393  ms (320 lines of 480 pixels)
+ Read check     Err, on line 232 at 17 (Read clock = 30.00 MHz)
+     Pixels =  2131  ms (480x320)
+        Cls =   152  ms (480x320)
+-------------
 -------------
  Disp clock = 40.00 MHz (requested: 40.00)
-      Lines =  1549  ms (320 lines of 480 pixels)
- Read check     Err, on line 300 at 1 (Read clock = 40.00 MHz)
-     Pixels =  1751  ms (480x320)
-        Cls =   139  ms (480x320)
+      Lines =  1392  ms (320 lines of 480 pixels)
+ Read check      OK, line 163 (Read clock = 16.00 MHz)
+     Pixels =  1835  ms (480x320)
+        Cls =   106  ms (480x320)
 -------------
 
 Graphics demo started
+---------------------
+
+         DMA mode: OFF
+   GRAYSCALE mode: OFF
+
+Clear screen time: 226 ms
+Display line time: 720 us
+  JPG Decode time: 411 ms
+Decode JPG (file): 411 ms
+  BMP Decode time: 768 ms
+
+         DMA mode: ON
+   GRAYSCALE mode: OFF
+
+Clear screen time: 106 ms
+Display line time: 341 us
+  JPG Decode time: 211 ms
+Decode JPG (file): 211 ms
+  BMP Decode time: 768 ms
+
+         DMA mode: OFF
+   GRAYSCALE mode: ON
+
+Clear screen time: 453 ms
+Display line time: 1586 us
+  JPG Decode time: 742 ms
+Decode JPG (file): 742 ms
+  BMP Decode time: 1103 ms
+
+         DMA mode: ON
+   GRAYSCALE mode: ON
+
+Clear screen time: 106 ms
+Display line time: 958 us
+  JPG Decode time: 557 ms
+Decode JPG (file): 557 ms
+  BMP Decode time: 1103 ms
+
 ```

@@ -232,7 +232,7 @@ static void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornerna
 	int16_t x = 0;
 	int16_t y = r;
 
-	spi_nodma_device_select(disp_spi, 0);
+	disp_select();
 	while (x < y) {
 		if (f >= 0) {
 			y--;
@@ -259,7 +259,7 @@ static void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornerna
 			TFT_drawPixel(x0 - x, y0 - y, color, 0);
 		}
 	}
-	spi_nodma_device_deselect(disp_spi);
+	disp_deselect();
 }
 
 // Used to do circles and roundrects
@@ -503,7 +503,7 @@ void TFT_drawCircle(int16_t x, int16_t y, int radius, color_t color) {
   int x1 = 0;
   int y1 = radius;
 
-  spi_nodma_device_select(disp_spi, 0);
+  disp_select();
   TFT_drawPixel(x, y + radius, color, 0);
   TFT_drawPixel(x, y - radius, color, 0);
   TFT_drawPixel(x + radius, y, color, 0);
@@ -526,7 +526,7 @@ void TFT_drawCircle(int16_t x, int16_t y, int radius, color_t color) {
     TFT_drawPixel(x + y1, y - x1, color, 0);
     TFT_drawPixel(x - y1, y - x1, color, 0);
   }
-  spi_nodma_device_deselect(disp_spi);
+  disp_deselect();
 }
 
 //---------------------------------------------------------------------
@@ -538,7 +538,7 @@ void TFT_fillCircle(int16_t x, int16_t y, int radius, color_t color) {
 //--------------------------------------------------------------------------------------------------------------------
 static void TFT_draw_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16_t y0, color_t color, uint8_t option)
 {
-	spi_nodma_device_select(disp_spi, 0);
+	disp_select();
     // upper right
     if ( option & TFT_ELLIPSE_UPPER_RIGHT ) TFT_drawPixel(x0 + x, y0 - y, color, 0);
     // upper left
@@ -547,7 +547,7 @@ static void TFT_draw_ellipse_section(uint16_t x, uint16_t y, uint16_t x0, uint16
     if ( option & TFT_ELLIPSE_LOWER_RIGHT ) TFT_drawPixel(x0 + x, y0 + y, color, 0);
     // lower left
     if ( option & TFT_ELLIPSE_LOWER_LEFT ) TFT_drawPixel(x0 - x, y0 + y, color, 0);
-	spi_nodma_device_deselect(disp_spi);
+	disp_deselect();
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -1095,7 +1095,7 @@ static int rotatePropChar(int x, int y, int offset) {
   float sin_radian = sin(radian);
 
   uint8_t mask = 0x80;
-  spi_nodma_device_select(disp_spi, 0);
+  disp_select();
   for (int j=0; j < fontChar.height; j++) {
     for (int i=0; i < fontChar.width; i++) {
       if (((i + (j*fontChar.width)) % 8) == 0) {
@@ -1112,7 +1112,7 @@ static int rotatePropChar(int x, int y, int offset) {
       mask >>= 1;
     }
   }
-  spi_nodma_device_deselect(disp_spi);
+  disp_deselect();
 
   return fontChar.xDelta+1;
 }
@@ -1131,7 +1131,7 @@ static int printProportionalChar(int x, int y) {
 
   // draw Glyph
   uint8_t mask = 0x80;
-  spi_nodma_device_select(disp_spi, 0);
+  disp_select();
   for (j=0; j < fontChar.height; j++) {
     for (i=0; i < fontChar.width; i++) {
       if (((i + (j*fontChar.width)) % 8) == 0) {
@@ -1147,7 +1147,7 @@ static int printProportionalChar(int x, int y) {
       mask >>= 1;
     }
   }
-  spi_nodma_device_deselect(disp_spi);
+  disp_deselect();
 
   return fontChar.xDelta;
 }
@@ -1170,7 +1170,7 @@ static void printChar(uint8_t c, int x, int y) {
     TFT_fillRect(x, y, cfont.x_size, cfont.y_size, _bg);
   }
 
-  spi_nodma_device_select(disp_spi, 0);
+  disp_select();
   for (j=0; j<cfont.y_size; j++) {
     for (k=0; k < fz; k++) {
       ch = cfont.font[temp+k];
@@ -1186,7 +1186,7 @@ static void printChar(uint8_t c, int x, int y) {
     }
     temp += (fz);
   }
-  spi_nodma_device_deselect(disp_spi);
+  disp_deselect();
 }
 
 // rotated fixed width character
@@ -1204,7 +1204,7 @@ static void rotateChar(uint8_t c, int x, int y, int pos) {
   else fz = cfont.x_size/8;
   temp=((c-cfont.offset)*((fz)*cfont.y_size))+4;
 
-  spi_nodma_device_select(disp_spi, 0);
+  disp_select();
   for (j=0; j<cfont.y_size; j++) {
     for (zz=0; zz<(fz); zz++) {
       ch = cfont.font[temp+zz];
@@ -1220,7 +1220,7 @@ static void rotateChar(uint8_t c, int x, int y, int pos) {
     }
     temp+=(fz);
   }
-  spi_nodma_device_deselect(disp_spi);
+  disp_deselect();
   // calculate x,y for the next char
   TFT_X = (int)(x + ((pos+1) * cfont.x_size * cos_radian));
   TFT_Y = (int)(y + ((pos+1) * cfont.x_size * sin_radian));
@@ -1521,9 +1521,9 @@ void TFT_setRotation(uint8_t m) {
 #endif
 	}
 	if (send) {
-		if (spi_nodma_device_select(disp_spi, 0) == ESP_OK) {
-			disp_spi_transfer_cmd_data(disp_spi, TFT_MADCTL, &madctl, 1);
-			spi_nodma_device_deselect(disp_spi);
+		if (disp_select() == ESP_OK) {
+			disp_spi_transfer_cmd_data(TFT_MADCTL, &madctl, 1);
+			disp_deselect();
 		}
 	}
 
@@ -1537,22 +1537,10 @@ void TFT_setRotation(uint8_t m) {
 // Input: i 0 to disable inversion; non-zero to enable inversion
 //------------------------------------------
 void TFT_invertDisplay(const uint8_t mode) {
-  if ( mode == INVERT_ON ) disp_spi_transfer_cmd(disp_spi, TFT_INVONN);
-  else disp_spi_transfer_cmd(disp_spi, TFT_INVOFF);
+  if ( mode == INVERT_ON ) disp_spi_transfer_cmd(TFT_INVONN);
+  else disp_spi_transfer_cmd(TFT_INVOFF);
 }
 
-/**
- * Converts the components of a color, as specified by the HSB
- * model, to an equivalent set of values for the default RGB model.
- * The _sat and _brightness components
- * should be floating-point values between zero and one (numbers in the range 0.0-1.0)
- * The _hue component can be any floating-point number.  The floor of this number is
- * subtracted from it to create a fraction between 0 and 1.
- * This fractional number is then multiplied by 360 to produce the hue
- * angle in the HSB color model.
- * The integer that is returned by HSBtoRGB encodes the
- * value of a color in bits 0-15 of an integer value
-*/
 //-----------------------------------------------------------
 color_t HSBtoRGB(float _hue, float _sat, float _brightness) {
  float red = 0.0;
@@ -1725,7 +1713,6 @@ typedef struct {
     uint8_t *membuff;	// memory buffer containing the image
     uint32_t bufsize;	// size of the memory buffer
     uint32_t bufptr;	// memory buffer current possition
-    uint8_t intrans;
 } JPGIODEV;
 
 
@@ -1821,14 +1808,8 @@ static UINT tjd_output (
 	    }
 		len = ((dright-left+1) * (dbottom-top+1));		// calculate length of data
 
-		if (tft_use_trans) {
-			if (dev->intrans) {
-				if (send_data_finish() != ESP_OK) return 0;
-			}
-			if (send_data_trans(left, top, dright, dbottom, len, tft_line) != ESP_OK) return 0;
-			dev->intrans = 1;
-		}
-		else send_data(left, top, dright, dbottom, len, tft_line);
+		disp_deselect();
+		send_data(left, top, dright, dbottom, len, tft_line);
 	}
 	else {
 		printf("max data size exceded: %d (%d,%d,%d,%d)\r\n", len, left,top,right,bottom);
@@ -1874,7 +1855,6 @@ void tft_jpg_image(int x, int y, int ascale, char *fname, uint8_t *buf, int size
         	if (dbg) printf("Error opening file: %s\r\n", strerror(errno));
         }
     }
-    dev.intrans = 0;
 
 	char *work;				// Pointer to the working buffer (must be 4-byte aligned)
 	UINT sz_work = 3800;	// Size of the working buffer (must be power of 2)
@@ -1960,14 +1940,11 @@ void tft_jpg_image(int x, int y, int ascale, char *fname, uint8_t *buf, int size
 			dev.y = y;
 			// Start to decompress the JPEG file
 
-		    uint32_t tstart = clock();
 			rc = jd_decomp(&jd, tjd_output, scale);
-			if ((tft_use_trans) && (dev.intrans)) send_data_finish();
+			disp_deselect();
 			if (rc != JDR_OK) {
 				if (dbg) printf("jpg decompression error %d\r\n", rc);
 			}
-			tstart = clock() - tstart;
-			if (dbg) printf("Decode time: %u ms\r\n", tstart);
 		}
 		else {
 			if (dbg) printf("jpg prepare error %d\r\n", rc);
@@ -1990,9 +1967,9 @@ int tft_bmp_image(int x, int y, char *fname, uint8_t *imgbuf, int size)
 	struct stat sb;
 	uint32_t xrd = 0;
 	uint8_t err = 9;
-	uint8_t intrans = 0;
 	uint8_t tmpc;
 	int i;
+	uint8_t use_trans = tft_use_trans;
 
     if (!tft_line) {
 	    printf("Line buffer not allocated\r\n");
@@ -2069,6 +2046,9 @@ exithd:
 		goto exit;
 	}
 
+	// :TODO, When using DMA mode, BMP does not work well, force direct mode;
+	tft_use_trans = 0;
+
 	while (ysize > 0) {
 		// Position at line start
 		// ** BMP images are stored in file from LAST to FIRST line
@@ -2107,20 +2087,15 @@ exithd:
 			buf[i+1] &= 0xfc;          // G
 		}
 
-		if (tft_use_trans) {
-			if (intrans) {
-				if (send_data_finish() != ESP_OK) break;
-			}
-		    if (send_data_trans(x, y, xend, y, disp_xsize, tft_line) != ESP_OK) break;
-	    	intrans = 1;
-		}
-		else send_data(x, y, xend, y, disp_xsize, tft_line);
+		disp_deselect();
+	    send_data(x, y, xend, y, disp_xsize, tft_line);
 
 		y++;	// next image line
 		if (y >= _height) break;
 		ysize--;
 	}
-	if ((tft_use_trans) && (intrans)) send_data_finish();
+	disp_deselect();
+	tft_use_trans = use_trans;  // restore mode
 
 exit:
 	if (fhndl) fclose(fhndl);

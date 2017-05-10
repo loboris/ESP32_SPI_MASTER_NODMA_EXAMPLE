@@ -304,9 +304,51 @@ void set_font_atrib(uint8_t l, uint8_t w, int offset, color_t color);
 void TFT_setRotation(uint8_t m);
 void TFT_invertDisplay(const uint8_t mode);
 
+/*
+ * Converts the components of a color, as specified by the HSB model,
+ * to an equivalent set of values for the default RGB model.
+ * The _sat and _brightness components should be floating-point values
+ * between zero and one (numbers in the range 0.0-1.0)
+ * The _hue component can be any floating-point number.
+ * The floor of this number is subtracted from it to create a fraction between 0 and 1.
+ * This fractional number is then multiplied by 360 to produce the hue angle in the HSB color model.
+ * The color structure that is returned by HSBtoRGB encodes the value of a color as R, G & B component
+*/
 color_t HSBtoRGB(float _hue, float _sat, float _brightness);
 
+/*
+ * Decodes and displays JPG image
+ * Limits:
+ * 		Baseline only. Progressive and Lossless JPEG format are not supported.
+ *		Image size: Up to 65520 x 65520 pixels
+ *		Color space: YCbCr three components only. Gray scale image is not supported.
+ *		Sampling factor: 4:4:4, 4:2:2 or 4:2:0.
+ *
+ * Params:
+ *       x: image left position; constants CENTER & RIGHT can be used
+ *       y: image top position;  constants CENTER & BOTTOM can be used
+ *   scale: image scale factor: 0~3; image is scaled by 1/2^scale; value of -1 can be used for auto scale
+ *   fname: pointer to the name of the file from which the image will be read
+ *   		if set to NULL, image will be read from memory buffer pointed to by 'buf'
+ *     buf: pointer to the memory buffer from which the image will be read; used if fname=NULL
+ *    size: size of the memory buffer from which the image will be read; used if fname=NULL & buf!=NULL
+ *
+ */
 void tft_jpg_image(int x, int y, int ascale, char *fname, uint8_t *buf, int size);
+
+/*
+ * Decodes and displays BMP image
+ * Only RGB 24-bit with no color space information BMP images can be displayed
+ *
+ * Params:
+ *       x: image left position; constants CENTER & RIGHT can be used
+ *       y: image top position;  constants CENTER & BOTTOM can be used
+ *   fname: pointer to the name of the file from which the image will be read
+ *   		if set to NULL, image will be read from memory buffer pointed to by 'imgbuf'
+ *  imgbuf: pointer to the memory buffer from which the image will be read; used if fname=NULL
+ *    size: size of the memory buffer from which the image will be read; used if fname=NULL & imgbuf!=NULL
+ *
+ */
 int tft_bmp_image(int x, int y, char *fname, uint8_t *imgbuf, int size);
 
 int tp_get_data(uint8_t type, int samples);

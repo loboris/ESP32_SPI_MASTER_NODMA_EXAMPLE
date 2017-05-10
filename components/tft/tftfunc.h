@@ -9,13 +9,10 @@
 
 #include "spi_master_nodma.h"
 
-// ########################################################
-// ### SET YOUR DISPLAY TYPE TO 1; THE OTHER ONE TO 0 ! ###
-// ########################################################
 #define DISP_TYPE_ILI9341	0
 #define DISP_TYPE_ILI9488	1
-// ########################################################
-
+#define DISP_COLOR_BITS_24	0x66
+#define DISP_COLOR_BITS_16	0x55
 
 // ##############################################################
 // ### Define ESP32 SPI pins to which the display is attached ###
@@ -28,9 +25,12 @@
 #define PIN_NUM_DC   26
 // Touch screen CS pin
 #define PIN_NUM_TCS  25
-// Reset and backlit pins are not used
-//#define PIN_NUM_RST  18
-//#define PIN_NUM_BCKL 5
+// ** Reset and backlit pins are not used
+// ** If you want to use them, ste to some valid pin number
+#define PIN_NUM_RST  0
+#define PIN_NUM_BCKL 0
+#define PIN_BCKL_ON 0
+#define PIN_BCKL_ON 1
 // ##############################################################
 
 // #######################################################
@@ -39,12 +39,6 @@
 #define USE_TOUCH	0
 // #######################################################
 
-
-#if DISP_TYPE_ILI9488
-#define COLOR_BITS			24
-#else
-#define COLOR_BITS			16
-#endif
 
 #define TFT_MAX_DISP_SIZE		480					// maximum display dimension in pixel
 #define TFT_LINEBUF_MAX_SIZE	TFT_MAX_DISP_SIZE	// line buffer maximum size in words (uint16_t)
@@ -177,7 +171,15 @@ typedef struct {
 } color_t;
 
 
+// 24 (default) or 16 only valid for ILI9341
+uint8_t COLOR_BITS;
+
+// use DMA transfer if set to 1
 uint8_t tft_use_trans;
+uint8_t tft_in_trans;
+
+// Display all colors as gray scale if 1
+uint8_t gray_scale;
 
 spi_nodma_device_handle_t disp_spi;
 spi_nodma_device_handle_t ts_spi;
@@ -186,20 +188,14 @@ color_t *tft_line;
 uint16_t _width;
 uint16_t _height;
 
-void disp_spi_transfer_start(spi_nodma_device_handle_t handle, int bits);
-void disp_spi_transfer_cmd(spi_nodma_device_handle_t handle, int8_t cmd);
-void disp_spi_transfer_addrwin(spi_nodma_device_handle_t handle, uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2);
-void disp_spi_transfer_pixel(spi_nodma_device_handle_t handle, color_t color);
-void disp_spi_set_pixel(spi_nodma_device_handle_t handle, uint16_t x, uint16_t y, color_t color);
-void disp_spi_transfer_color_rep(spi_nodma_device_handle_t handle, color_t *color, uint32_t len, uint8_t rep);
-void disp_spi_transfer_cmd_data(spi_nodma_device_handle_t handle, int8_t cmd, uint8_t *data, uint32_t len);
+void disp_spi_transfer_cmd(int8_t cmd);
+void disp_spi_transfer_cmd_data(int8_t cmd, uint8_t *data, uint32_t len);
 
-esp_err_t send_data_trans(int x1, int y1, int x2, int y2, uint32_t len, color_t *buf);
-esp_err_t send_data_finish();
-void IRAM_ATTR disp_spi_transfer_color_rep_trans(int x1, int y1, int x2, int y2, color_t color, uint32_t len);
+esp_err_t IRAM_ATTR disp_deselect();
+esp_err_t IRAM_ATTR disp_select();
 
-void send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *buf);
 void drawPixel(int16_t x, int16_t y, color_t color, uint8_t sel);
+void send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *buf);
 void TFT_pushColorRep(int x1, int y1, int x2, int y2, color_t data, uint32_t len);
 int read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf, uint8_t sel);
 color_t readPixel(int16_t x, int16_t y, uint8_t sel);

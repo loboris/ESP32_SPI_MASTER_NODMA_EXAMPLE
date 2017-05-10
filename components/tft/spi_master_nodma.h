@@ -347,6 +347,15 @@ esp_err_t spi_device_get_trans_result(spi_nodma_device_handle_t handle, spi_nodm
 esp_err_t spi_device_transmit(spi_nodma_device_handle_t handle, spi_nodma_transaction_t *trans_desc);
 
 
+/*
+ * Non queued transfers uses the semaphore (taken in select function) to protect the transfer
+ * This pair of functions can be used if mixed queued & non-queued transfers are used at the same time
+ * 'spi_device_TakeSemaphore' can be used before 'spi_device_queue_trans' or 'spi_device_transmit'
+ * 'spi_device_GiveSemaphore' can be used after 'spi_device_get_trans_result' or 'spi_device_transmit'
+ */
+esp_err_t spi_nodma_device_TakeSemaphore(spi_nodma_device_handle_t handle);
+void spi_nodma_device_GiveSemaphore(spi_nodma_device_handle_t handle);
+
 
 #ifdef __cplusplus
 }

@@ -803,9 +803,13 @@ esp_err_t spi_device_transmit(spi_nodma_device_handle_t handle, spi_nodma_transa
 //--------------------------------------------------------------------------------------
 esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, int force)
 {
+	SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
+
 	if ((handle->cfg.selected == 1) && (!force)) return ESP_OK;
 
-	SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
+    // Check if queued transfer is in progress
+    SPI_CHECK(uxQueueMessagesWaiting(handle->trans_queue)==0, "Have unfinished transactions", ESP_ERR_INVALID_STATE);
+    SPI_CHECK(uxQueueMessagesWaiting(handle->ret_queue)==0, "Have unfinished transactions", ESP_ERR_INVALID_STATE);
 
 	int i;
 	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
@@ -919,9 +923,14 @@ esp_err_t IRAM_ATTR spi_nodma_device_select(spi_nodma_device_handle_t handle, in
 //-----------------------------------------------------------------------------
 esp_err_t IRAM_ATTR spi_nodma_device_deselect(spi_nodma_device_handle_t handle)
 {
+	SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
+
 	if (handle->cfg.selected == 0) return ESP_OK;
 
 	SPI_CHECK(handle!=NULL, "invalid handle", ESP_ERR_INVALID_ARG);
+    // Check if queued transfer is in progress
+    SPI_CHECK(uxQueueMessagesWaiting(handle->trans_queue)==0, "Have unfinished transactions", ESP_ERR_INVALID_STATE);
+    SPI_CHECK(uxQueueMessagesWaiting(handle->ret_queue)==0, "Have unfinished transactions", ESP_ERR_INVALID_STATE);
 
 	int i;
 	spi_nodma_host_t *host=(spi_nodma_host_t*)handle->host;
@@ -941,6 +950,20 @@ esp_err_t IRAM_ATTR spi_nodma_device_deselect(spi_nodma_device_handle_t handle)
 	xSemaphoreGive(host->spi_nodma_bus_mutex);
 
 	return ESP_OK;
+}
+
+//----------------------------------------------------------------------------------
+esp_err_t IRAM_ATTR spi_nodma_device_TakeSemaphore(spi_nodma_device_handle_t handle)
+{
+	xSemaphoreTake(handle->host->spi_nodma_bus_mutex, portMAX_DELAY);
+	if (!(xSemaphoreTake(handle->host->spi_nodma_bus_mutex, 5000))) return ESP_ERR_INVALID_STATE;
+	else return ESP_OK;
+}
+
+//-----------------------------------------------------------------------------
+void IRAM_ATTR spi_nodma_device_GiveSemaphore(spi_nodma_device_handle_t handle)
+{
+	xSemaphoreTake(handle->host->spi_nodma_bus_mutex, portMAX_DELAY);
 }
 
 //------------------------------------------------------------
