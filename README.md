@@ -107,10 +107,17 @@ This is active only during the first phase (Display test).
 
 ---
 
-![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo.jpg) ![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo3.jpg)
+18-bit color mode
+![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo.jpg)
+
+Jpeg decoding
+![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo3.jpg)
 
 Grayscale mode
-![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo2.jpg) ![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo1.jpg)
+![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo2.jpg)
+
+Jpeg decoding
+![Example on ILI9488 480x320 display](https://raw.githubusercontent.com/loboris/ESP32_SPI_MASTER_NODMA_EXAMPLE/master/demo1.jpg)
 
 ---
 
