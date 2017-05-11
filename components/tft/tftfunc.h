@@ -36,7 +36,7 @@
 // #######################################################
 // Set this to 1 if you want to use touch screen functions
 // #######################################################
-#define USE_TOUCH	1
+#define USE_TOUCH	0
 // #######################################################
 
 uint8_t tft_disp_type;
