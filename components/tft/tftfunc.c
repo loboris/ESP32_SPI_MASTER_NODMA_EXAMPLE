@@ -22,10 +22,15 @@ uint8_t tft_use_trans = 1;
 uint8_t tft_in_trans = 0;
 uint8_t COLOR_BITS = 24;
 uint8_t gray_scale = 0;
+uint32_t max_rdclock = 16000000;
 
 color_t *tft_line = NULL;
 uint16_t _width = 320;
 uint16_t _height = 240;
+
+// Set display type
+uint8_t tft_disp_type = DISP_TYPE_ILI9488;
+
 
 spi_nodma_device_handle_t disp_spi = NULL;
 spi_nodma_device_handle_t ts_spi = NULL;
@@ -195,6 +200,21 @@ static color_t IRAM_ATTR color2gs(color_t color)
 	return _color;
 }
 
+//---------------------------------------
+static uint32_t pack_color(color_t color)
+{
+	uint32_t color16 = 0;
+	uint8_t *buf16 = (uint8_t *)(&color16);
+
+	// Convert RGB 18-bit, 3 byte colors to RGB 16-bit, 2 byte format
+	buf16[0] = color.r & 0xF8;
+	buf16[0] |= (color.g & 0xE0) >> 5;
+	buf16[1] = (color.g & 0x1C) << 3;
+	buf16[1] |= (color.b & 0xF8) >> 3;
+
+	return color16;
+}
+
 // Set display pixel at given coordinates to given color
 //------------------------------------------------------------------------
 void IRAM_ATTR drawPixel(int16_t x, int16_t y, color_t color, uint8_t sel)
@@ -217,10 +237,7 @@ void IRAM_ATTR drawPixel(int16_t x, int16_t y, color_t color, uint8_t sel)
 	else _color = color;
 
 	if (COLOR_BITS == 16) {
-		wd = (uint32_t)(_color.r & 0xF8);
-		wd |= (uint32_t)(_color.g & 0xE0) << 3;
-		wd |= (uint32_t)(_color.g & 0x1C) << 11;
-		wd |= (uint32_t)(_color.b & 0xF8) << 5;
+		wd = pack_color(_color);
 	}
 	else {
 		wd = (uint32_t)_color.r;
@@ -274,19 +291,8 @@ static void IRAM_ATTR _TFT_pushColorRep(color_t *color, uint32_t len, uint8_t re
     	// ==== Push color data to spi buffer ====
 		// ** Get color data from color buffer **
 		if (COLOR_BITS == 16) {
-			if (gray_scale) {
-			    gs_clr = GS_FACT_R * color[cidx].r + GS_FACT_G * color[cidx].g + GS_FACT_B * color[cidx].b;
-				wd = (uint32_t)gs_clr & 0xF8;
-				wd |= ((uint32_t)gs_clr & 0xE0) << 3;
-				wd |= ((uint32_t)gs_clr & 0x1C) << 11;
-				wd |= ((uint32_t)gs_clr & 0xF8) << 5;
-			}
-			else {
-				wd = (uint32_t)(color[cidx].r & 0xF8);
-				wd |= (uint32_t)(color[cidx].g & 0xE0) << 3;
-				wd |= (uint32_t)(color[cidx].g & 0x1C) << 11;
-				wd |= (uint32_t)(color[cidx].b & 0xF8) << 5;
-			}
+			if (gray_scale) wd = pack_color(color2gs(color[cidx]));
+			else wd = pack_color(color[cidx]);
 		}
 		else {
 			if (gray_scale) {
@@ -324,8 +330,11 @@ static void IRAM_ATTR _TFT_pushColorRep_trans(color_t color, uint32_t len)
 
 	size = len;
     if (size > TFT_LINEBUF_MAX_SIZE) size = TFT_LINEBUF_MAX_SIZE;
+
+	uint16_t *buf16 = (uint16_t *)tft_line;
     for (uint32_t n=0; n<size;n++) {
-		tft_line[n] = _color;
+	    if (COLOR_BITS == 16) buf16[n] = (uint16_t)pack_color(_color);
+	    else tft_line[n] = _color;
     }
 
 	// ** RAM write command
@@ -344,8 +353,11 @@ static void IRAM_ATTR _TFT_pushColorRep_trans(color_t color, uint32_t len)
 	    if (size > TFT_LINEBUF_MAX_SIZE) size = TFT_LINEBUF_MAX_SIZE;
 
 	    tft_trans.tx_buffer = (uint8_t *)tft_line;
-		tft_trans.length = size*3*8;  //Data length, in bits
-		//Queue transaction.
+	    //Set data length, in bits
+	    if (COLOR_BITS == 16) tft_trans.length = size * 2 * 8;
+	    else  tft_trans.length = size * 3 * 8;
+
+	    //Queue transaction.
 		ret = spi_device_queue_trans(disp_spi, &tft_trans, 1000*portTICK_RATE_MS);
 	    tft_in_trans = 1;
 		if (ret != ESP_OK) break;
@@ -383,8 +395,6 @@ void IRAM_ATTR send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *
 	disp_spi_transfer_addrwin(x1, x2, y1, y2);
 
 	if (tft_use_trans) {
-		uint32_t idx18;
-
 	    // ** Send color data using transaction mode **
 		// ** RAM write command
 		// Set DC to 0 (command mode);
@@ -397,28 +407,17 @@ void IRAM_ATTR send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *
 
 	    uint32_t size = 0;
 	    if (COLOR_BITS == 16) {
-		    color_t _color;
-	    	// Convert RGB 18-bit, 3 byte colors to RGB 16-bit, 2 byte format
-			uint8_t *buf16 = (uint8_t *)buf;
-			for (idx18=0; idx18<len; idx18++) {
-				if (gray_scale) _color = color2gs(buf[idx18]);
-				else _color = buf[idx18];
-
-				buf16[size]    = (uint32_t)(_color.r & 0xF8);
-				buf16[size]   |= (uint32_t)(_color.g & 0xE0) >> 5;
-				buf16[size+1]  = (uint32_t)(_color.g & 0x1C) << 3;
-				buf16[size+1] |= (uint32_t)(_color.b & 0xF8) >> 3;
-				size += 2;
+			uint16_t *buf16 = (uint16_t *)buf;
+			for (int n=0; n<len; n++) {
+				if (gray_scale) buf16[n] = (uint16_t)pack_color(color2gs(buf[n]));
+				else buf16[n] = (uint16_t)pack_color(buf[n]);
 			}
+	    	size = len * 2;
 	    }
 	    else {
 	    	if (gray_scale) {
-	    	    float gs_clr;
-	    		for (idx18=0; idx18<len;idx18++) {
-				    gs_clr = GS_FACT_R * buf[idx18].r + GS_FACT_G * buf[idx18].g + GS_FACT_B * buf[idx18].b;
-					buf[idx18].r = (uint8_t)gs_clr;
-					buf[idx18].g = (uint8_t)gs_clr;
-					buf[idx18].b = (uint8_t)gs_clr;
+	    		for (int n=0; n<len;n++) {
+					buf[n] = color2gs(buf[n]);
 	    		}
 	    	}
 	    	size = len * 3;
@@ -442,19 +441,22 @@ void IRAM_ATTR send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *
 }
 
 // Reads pixels/colors from the TFT's GRAM
-//-----------------------------------------------------------------------------------------
-int IRAM_ATTR read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf, uint8_t sel)
+//----------------------------------------------------------------------------
+int IRAM_ATTR read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf)
 {
 	spi_nodma_transaction_t t;
     memset(&t, 0, sizeof(t));  //Zero out the transaction
 	memset(buf, 0, len*sizeof(color_t));
 
-	if (sel) {
-		if (disp_select()) return -2;
-	}
-	else wait_trans_finish();
 
-    // ** Send address window **
+	if (disp_deselect() != ESP_OK) return -1;
+
+	uint32_t current_clock = spi_nodma_get_speed(disp_spi);
+	if (max_rdclock < current_clock) spi_nodma_set_speed(disp_spi, max_rdclock);
+
+	if (disp_select() != ESP_OK) return -2;
+
+	// ** Send address window **
 	disp_spi_transfer_addrwin(x1, x2, y1, y2);
 
     // ** GET pixels/colors **
@@ -468,18 +470,20 @@ int IRAM_ATTR read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf, u
 
 	spi_nodma_transfer_data(disp_spi, &t); // Receive using direct mode
 
-	if (sel) disp_deselect();
+	disp_deselect();
+
+	if (max_rdclock < current_clock) spi_nodma_set_speed(disp_spi, current_clock);
 
     return 0;
 }
 
 // Reads one pixel/color from the TFT's GRAM
-//------------------------------------------------------------
-color_t IRAM_ATTR readPixel(int16_t x, int16_t y, uint8_t sel)
+//-----------------------------------------------
+color_t IRAM_ATTR readPixel(int16_t x, int16_t y)
 {
     uint8_t color_buf[sizeof(color_t)+1] = {0};
 
-    read_data(x, y, x+1, y+1, 1, color_buf, sel);
+    read_data(x, y, x+1, y+1, 1, color_buf);
 
     color_t color;
 	color.r = color_buf[1];
@@ -497,7 +501,6 @@ uint16_t IRAM_ATTR touch_get_data(uint8_t type)
 	uint8_t rxdata[2] = {0};
 
 	if (spi_nodma_device_select(ts_spi, 0)) return 0;
-	taskDISABLE_INTERRUPTS();
 
 	// send command byte & receive 2 byte response
     t.rxlength=8*2;
@@ -507,7 +510,6 @@ uint16_t IRAM_ATTR touch_get_data(uint8_t type)
 	ret = spi_nodma_transfer_data(ts_spi, &t);    // Transmit using direct mode
 
 	spi_nodma_device_deselect(ts_spi);
-	taskENABLE_INTERRUPTS();
 
 	if (ret) return 0;
 

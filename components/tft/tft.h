@@ -295,6 +295,9 @@ void TFT_setFont(uint8_t font, const char *font_file);
 
 void TFT_print(char *st, int x, int y);
 
+int tft_getfontsize(int *width, int* height);
+int tft_getfontheight();
+
 void tft_setclipwin(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
 
 void tft_resetclipwin();
@@ -303,6 +306,10 @@ void set_font_atrib(uint8_t l, uint8_t w, int offset, color_t color);
 
 void TFT_setRotation(uint8_t m);
 void TFT_invertDisplay(const uint8_t mode);
+
+// returns the string width in pixels. Useful for positions strings on the screen.
+//-----------------------------
+int getStringWidth(char* str);
 
 /*
  * Converts the components of a color, as specified by the HSB model,
@@ -351,6 +358,7 @@ void tft_jpg_image(int x, int y, int ascale, char *fname, uint8_t *buf, int size
  */
 int tft_bmp_image(int x, int y, char *fname, uint8_t *imgbuf, int size);
 
-int tp_get_data(uint8_t type, int samples);
+
+int tft_read_touch(int *x, int* y, uint8_t raw);
 
 #endif

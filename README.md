@@ -68,7 +68,6 @@ In that case replace **#include "spi_master_nodma.h"** with **#include "driver/s
 * Touch screen supported (with XPT2046 controllers)
 * Read from display memory supported
 
-**The code is not fully tested with ILI9431 yet.**
 
 
 To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Default pins used are:
@@ -81,13 +80,15 @@ To run the example, attach ILI9341 or ILI9488 based display module to ESP32. Def
 
 ---
 
-**If you have ILI9488, set** `tft_disp_type = DISP_TYPE_ILI9488` in *spi_master_demo.c*
+**If you have ILI9488, set** `tft_disp_type = DISP_TYPE_ILI9488` in **app_MAIN()** in *spi_master_demo.c*
 
-**If you have ILI9341, set** `tft_disp_type = DISP_TYPE_ILI9341` in *spi_master_demo.c*
+**If you have ILI9341, set** `tft_disp_type = DISP_TYPE_ILI9341` in **app_MAIN()** in *spi_master_demo.c*
+
+**If you have ILI9341, set** `COLOR_BITS = 24` or `COLOR_BITS = 16` in **app_MAIN()** in *spi_master_demo.c*
 
 **If you want to use different pins, change them in** *tftfunc.h*
 
-**if you want to use the touch screen functions, set** `#define USE_TOUCH	1` in *tftfunc.h*
+**if you want to use the touch screen functions, set** `#define USE_TOUCH 1` in *tftfunc.h*
 
 Using *make menuconfig* **select tick rate 1000** ( → Component config → FreeRTOS → Tick rate (Hz) ) to get more accurate timings
 
@@ -100,10 +101,9 @@ Using *make menuconfig* **select tick rate 1000** ( → Component config → Fre
 * Text and graphics are drawn on screen to demonstrate some drawing functions and text/fonts functionality
 * Full color mode and grayscale mode are alternated on every pass
 * On first 4 passes timings are printed for different operating modes
-
- 
-If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep the display touched until the info is printed. 
-This is active only during the first phase (Display test).
+* If Touch screen is available, reading the touch coordinates (non calibrated) is also demonstrated. Keep the display touched until the info is printed
+  * Raw coordinates are returned during the first phase (test).
+  * Calibrated coordinates are returned while Text demo is displayed.
 
 ---
 

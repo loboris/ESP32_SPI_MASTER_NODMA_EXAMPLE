@@ -125,9 +125,15 @@ uint32_t tp_caly = 122224794;
 
 //------------------------------------------
 int compare_colors(color_t c1, color_t c2) {
-	if ((c1.r & 0xFC) != (c2.r & 0xFC)) return 1;
+	if (COLOR_BITS == 24) {
+		if ((c1.r & 0xFC) != (c2.r & 0xFC)) return 1;
+		if ((c1.b & 0xFC) != (c2.b & 0xFC)) return 1;
+	}
+	else {
+		if ((c1.r & 0xF8) != (c2.r & 0xF8)) return 1;
+		if ((c1.b & 0xF8) != (c2.b & 0xF8)) return 1;
+	}
 	if ((c1.g & 0xFC) != (c2.g & 0xFC)) return 1;
-	if ((c1.b & 0xFC) != (c2.b & 0xFC)) return 1;
 	return 0;
 }
 
@@ -149,7 +155,7 @@ color_t TFT_readPixel(int16_t x, int16_t y) {
 
   if ((x < dispWin.x1) || (y < dispWin.y1) || (x > dispWin.x2) || (y > dispWin.y2)) return TFT_BLACK;
 
-  return readPixel(x, y, 1);
+  return readPixel(x, y);
 }
 
 //-----------------------------------------------------------------------
@@ -1227,8 +1233,8 @@ static void rotateChar(uint8_t c, int x, int y, int pos) {
 }
 
 // returns the string width in pixels. Useful for positions strings on the screen.
-//----------------------------------
-static int getStringWidth(char* str) {
+//-----------------------------
+int getStringWidth(char* str) {
 
   // is it 7-segment font?
   if (cfont.bitmap == 2) return ((2 * (2 * cfont.y_size + 1)) + cfont.x_size) * strlen(str);
@@ -1470,38 +1476,27 @@ void TFT_setRotation(uint8_t m) {
 	if (m > 3) madctl = (m & 0xF8); // for testing, manually set MADCTL register
 	else {
 		orientation = m;
-#if DISP_TYPE_ILI9341
-		if ((rotation & 1)) {
-			_width  = ILI9341_HEIGHT;
-			_height = ILI9341_WIDTH;
+		if (tft_disp_type == DISP_TYPE_ILI9488) {
+			if ((rotation & 1)) {
+				_width  = ILI9488_HEIGHT;
+				_height = ILI9488_WIDTH;
+			}
+			else {
+				_width  = ILI9488_WIDTH;
+				_height = ILI9488_HEIGHT;
+			}
 		}
-		else {
-			_width  = ILI9341_WIDTH;
-			_height = ILI9341_HEIGHT;
+		else if (tft_disp_type == DISP_TYPE_ILI9341){
+			if ((rotation & 1)) {
+				_width  = ILI9341_HEIGHT;
+				_height = ILI9341_WIDTH;
+			}
+			else {
+				_width  = ILI9341_WIDTH;
+				_height = ILI9341_HEIGHT;
+			}
 		}
-		switch (rotation) {
-		case PORTRAIT:
-			madctl = (MADCTL_MX | MADCTL_BGR);
-			break;
-		case LANDSCAPE:
-			madctl = (MADCTL_MV | MADCTL_BGR);
-			break;
-		case PORTRAIT_FLIP:
-			madctl = (MADCTL_MY | MADCTL_BGR);
-			break;
-		case LANDSCAPE_FLIP:
-			madctl = (MADCTL_MX | MADCTL_MY | MADCTL_MV | MADCTL_BGR);
-			break;
-		}
-#elif DISP_TYPE_ILI9488
-		if ((rotation & 1)) {
-			_width  = ILI9488_HEIGHT;
-			_height = ILI9488_WIDTH;
-		}
-		else {
-			_width  = ILI9488_WIDTH;
-			_height = ILI9488_HEIGHT;
-		}
+		else send = 0;
 		switch (rotation) {
 		  case PORTRAIT:
 			madctl = (MADCTL_MX | MADCTL_BGR);
@@ -1516,9 +1511,6 @@ void TFT_setRotation(uint8_t m) {
 			madctl = (MADCTL_MX | MADCTL_MY | MADCTL_MV | MADCTL_BGR);
 			break;
 		}
-#else
-		send = 0;
-#endif
 	}
 	if (send) {
 		if (disp_select() == ESP_OK) {
@@ -1609,69 +1601,6 @@ color_t HSBtoRGB(float _hue, float _sat, float _brightness) {
 
  return color;
 }
-
-
-// ============= Touch panel functions =========================================
-
-//----------------------------------------
-int tp_get_data(uint8_t type, int samples)
-{
-	int n, result, val = 0;
-	uint32_t i = 0;
-	uint32_t vbuf[18];
-	uint32_t minval, maxval, dif;
-
-    if (samples < 3) samples = 1;
-    if (samples > 18) samples = 18;
-
-    // one dummy read
-    result = touch_get_data(type);
-
-    // read data
-	while (i < 10) {
-    	minval = 5000;
-    	maxval = 0;
-		// get values
-		for (n=0;n<samples;n++) {
-		    result = touch_get_data(type);
-			if (result < 0) break;
-
-			vbuf[n] = result;
-			if (result < minval) minval = result;
-			if (result > maxval) maxval = result;
-		}
-		if (result < 0) break;
-		dif = maxval - minval;
-		if (dif < 40) break;
-		i++;
-    }
-	if (result < 0) return -1;
-
-	if (samples > 2) {
-		// remove one min value
-		for (n = 0; n < samples; n++) {
-			if (vbuf[n] == minval) {
-				vbuf[n] = 5000;
-				break;
-			}
-		}
-		// remove one max value
-		for (n = 0; n < samples; n++) {
-			if (vbuf[n] == maxval) {
-				vbuf[n] = 5000;
-				break;
-			}
-		}
-		for (n = 0; n < samples; n++) {
-			if (vbuf[n] < 5000) val += vbuf[n];
-		}
-		val /= (samples-2);
-	}
-	else val = vbuf[0];
-
-    return val;
-}
-
 //---------------------------------------------------------------------
 void tft_setclipwin(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
@@ -1702,6 +1631,41 @@ void set_font_atrib(uint8_t l, uint8_t w, int offset, color_t color) {
 	cfont.offset = offset;
 	cfont.color  = color;
 }
+
+//------------------------------------------
+int tft_getfontsize(int *width, int* height)
+{
+  if (cfont.bitmap == 1) {
+    if (cfont.x_size != 0) *width = cfont.x_size;
+    else *width = getMaxWidth();
+    *height = cfont.y_size;
+  }
+  else if (cfont.bitmap == 2) {
+    *width = (2 * (2 * cfont.y_size + 1)) + cfont.x_size;
+    *height = (3 * (2 * cfont.y_size + 1)) + (2 * cfont.x_size);
+  }
+  else {
+    *width = 0;
+    *height = 0;
+    return 0;
+  }
+  return 1;
+}
+
+//---------------------
+int tft_getfontheight()
+{
+  if (cfont.bitmap == 1) {
+	// Bitmap font
+    return cfont.y_size;
+  }
+  else if (cfont.bitmap == 2) {
+	// 7-segment font
+    return (3 * (2 * cfont.y_size + 1)) + (2 * cfont.x_size);
+  }
+  return 0;
+}
+
 
 
 // ================ JPG SUPPORT ================================================
@@ -2104,4 +2068,138 @@ exit:
 }
 
 
+// ============= Touch panel functions =========================================
+
+//-----------------------------------------------
+static int tp_get_data(uint8_t type, int samples)
+{
+	int n, result, val = 0;
+	uint32_t i = 0;
+	uint32_t vbuf[18];
+	uint32_t minval, maxval, dif;
+
+    if (samples < 3) samples = 1;
+    if (samples > 18) samples = 18;
+
+    // one dummy read
+    result = touch_get_data(type);
+
+    // read data
+	while (i < 10) {
+    	minval = 5000;
+    	maxval = 0;
+		// get values
+		for (n=0;n<samples;n++) {
+		    result = touch_get_data(type);
+			if (result < 0) break;
+
+			vbuf[n] = result;
+			if (result < minval) minval = result;
+			if (result > maxval) maxval = result;
+		}
+		if (result < 0) break;
+		dif = maxval - minval;
+		if (dif < 40) break;
+		i++;
+    }
+	if (result < 0) return -1;
+
+	if (samples > 2) {
+		// remove one min value
+		for (n = 0; n < samples; n++) {
+			if (vbuf[n] == minval) {
+				vbuf[n] = 5000;
+				break;
+			}
+		}
+		// remove one max value
+		for (n = 0; n < samples; n++) {
+			if (vbuf[n] == maxval) {
+				vbuf[n] = 5000;
+				break;
+			}
+		}
+		for (n = 0; n < samples; n++) {
+			if (vbuf[n] < 5000) val += vbuf[n];
+		}
+		val /= (samples-2);
+	}
+	else val = vbuf[0];
+
+    return val;
+}
+
+//=============================================
+int tft_read_touch(int *x, int* y, uint8_t raw)
+{
+	int result = -1;
+    int32_t X=0, Y=0, tmp;
+
+    *x = 0;
+    *y = 0;
+
+    result = tp_get_data(0xB0, 3);
+	if (result > 50)  {
+		// tp pressed
+		result = tp_get_data(0xD0, 10);
+		if (result >= 0) {
+			X = result;
+
+			result = tp_get_data(0x90, 10);
+			if (result >= 0) Y = result;
+		}
+	}
+
+	if (result <= 50) return 0;
+
+	if (raw) {
+		*x = X;
+		*y = Y;
+		return result;
+	}
+
+	int xleft   = (tp_calx >> 16) & 0x3FFF;
+	int xright  = tp_calx & 0x3FFF;
+	int ytop    = (tp_caly >> 16) & 0x3FFF;
+	int ybottom = tp_caly & 0x3FFF;
+
+	int width = ILI9341_WIDTH;
+	int height = ILI9341_HEIGHT;
+	if (tft_disp_type == DISP_TYPE_ILI9488) {
+		width = ILI9488_WIDTH;
+		height = ILI9488_HEIGHT;
+	}
+
+	if (((xright - xleft) != 0) && ((ybottom - ytop) != 0)) {
+		X = ((X - xleft) * height) / (xright - xleft);
+		Y = ((Y - ytop) * width) / (ybottom - ytop);
+	}
+	else return 0;
+
+	if (X < 0) X = 0;
+	if (X > height-1) X = height-1;
+	if (Y < 0) Y = 0;
+	if (Y > width-1) Y = width-1;
+
+	switch (orientation) {
+		case PORTRAIT:
+			tmp = X;
+			X = width - Y - 1;
+			Y = tmp;
+			break;
+		case PORTRAIT_FLIP:
+			tmp = X;
+			X = Y;
+			Y = height - tmp - 1;
+			break;
+		case LANDSCAPE_FLIP:
+			X = height - X - 1;
+			Y = width - Y - 1;
+			break;
+	}
+
+	*x = X;
+	*y = Y;
+	return result;
+}
 

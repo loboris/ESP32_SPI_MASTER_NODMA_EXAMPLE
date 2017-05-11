@@ -30,14 +30,16 @@
 #define PIN_NUM_RST  0
 #define PIN_NUM_BCKL 0
 #define PIN_BCKL_ON 0
-#define PIN_BCKL_ON 1
+#define PIN_BCKL_OFF 1
 // ##############################################################
 
 // #######################################################
 // Set this to 1 if you want to use touch screen functions
 // #######################################################
-#define USE_TOUCH	0
+#define USE_TOUCH	1
 // #######################################################
+
+uint8_t tft_disp_type;
 
 
 #define TFT_MAX_DISP_SIZE		480					// maximum display dimension in pixel
@@ -178,6 +180,9 @@ uint8_t COLOR_BITS;
 uint8_t tft_use_trans;
 uint8_t tft_in_trans;
 
+// Maximum spi clock for read functions in Hz
+uint32_t max_rdclock;
+
 // Display all colors as gray scale if 1
 uint8_t gray_scale;
 
@@ -197,8 +202,8 @@ esp_err_t IRAM_ATTR disp_select();
 void drawPixel(int16_t x, int16_t y, color_t color, uint8_t sel);
 void send_data(int x1, int y1, int x2, int y2, uint32_t len, color_t *buf);
 void TFT_pushColorRep(int x1, int y1, int x2, int y2, color_t data, uint32_t len);
-int read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf, uint8_t sel);
-color_t readPixel(int16_t x, int16_t y, uint8_t sel);
+int read_data(int x1, int y1, int x2, int y2, int len, uint8_t *buf);
+color_t readPixel(int16_t x, int16_t y);
 
 uint16_t touch_get_data(uint8_t type);
 
